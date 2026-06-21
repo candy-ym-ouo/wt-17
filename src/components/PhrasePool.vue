@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { Phrase, PhraseCategory, PhraseRarity } from '@/types'
+import type { Phrase, PhraseCategory, PhraseRarity, PhraseSource } from '@/types'
 import { categoryLabels, categoryColors, rarityLabels, rarityColors } from '@/data/phrases'
 
 interface Props {
@@ -19,9 +19,26 @@ const emit = defineEmits<{
 
 const activeCategory = ref<PhraseCategory | 'all'>('all')
 const activeRarity = ref<PhraseRarity | 'all'>('all')
+const hoveredPhraseId = ref<string | null>(null)
 
 const categories: (PhraseCategory | 'all')[] = ['all', 'scene', 'emotion', 'time', 'action', 'imagery']
 const rarities: (PhraseRarity | 'all')[] = ['all', 'legendary', 'epic', 'rare', 'common']
+
+const sourceTypeLabels: Record<string, string> = {
+  initial: '初始',
+  chapter: '章节',
+  quest: '任务',
+  reward: '奖励',
+  event: '活动'
+}
+
+const sourceTypeColors: Record<string, string> = {
+  initial: '#8a8a7a',
+  chapter: '#5b7a8c',
+  quest: '#7a5b8c',
+  reward: '#c9a86c',
+  event: '#8b4557'
+}
 
 const filteredPhrases = computed(() => {
   let list = props.phrases
@@ -114,7 +131,8 @@ const rarityStats = computed(() => {
           class="phrase-chip"
           :class="{ 
             placed: placedPhraseIds.has(phrase.id),
-            collected: collectedPhrases.has(phrase.text)
+            collected: collectedPhrases.has(phrase.text),
+            hovered: hoveredPhraseId === phrase.id
           }"
           :style="{ 
             '--phrase-color': categoryColors[phrase.category],
@@ -122,10 +140,39 @@ const rarityStats = computed(() => {
           }"
           :disabled="placedPhraseIds.has(phrase.id)"
           @click="handleClick(phrase)"
+          @mouseenter="hoveredPhraseId = phrase.id"
+          @mouseleave="hoveredPhraseId = null"
         >
           <span class="phrase-rarity-dot" :style="{ background: rarityColors[phrase.rarity] }"></span>
           <span class="phrase-text">{{ phrase.text }}</span>
+          <span 
+            class="phrase-source-tag" 
+            :style="{ color: sourceTypeColors[phrase.source.type] }"
+            :title="phrase.source.description"
+          >
+            {{ sourceTypeLabels[phrase.source.type] }}
+          </span>
           <span v-if="collectedPhrases.has(phrase.text)" class="collected-badge">✦</span>
+          <div v-if="hoveredPhraseId === phrase.id" class="phrase-tooltip">
+            <div class="tooltip-title">
+              <span class="tooltip-rarity" :style="{ color: rarityColors[phrase.rarity] }">
+                {{ rarityLabels[phrase.rarity] }}
+              </span>
+              <span>·</span>
+              <span class="tooltip-category" :style="{ color: categoryColors[phrase.category] }">
+                {{ categoryLabels[phrase.category] }}
+              </span>
+            </div>
+            <div class="tooltip-source">
+              <span class="tooltip-source-label">来源：</span>
+              <span :style="{ color: sourceTypeColors[phrase.source.type] }">
+                {{ phrase.source.description || sourceTypeLabels[phrase.source.type] }}
+              </span>
+            </div>
+            <div v-if="collectedPhrases.has(phrase.text)" class="tooltip-collected">
+              ✓ 已收藏
+            </div>
+          </div>
         </button>
       </div>
       <div v-if="filteredPhrases.length === 0" class="empty-hint">
@@ -229,6 +276,85 @@ const rarityStats = computed(() => {
   gap: 6px;
   animation: fadeIn 0.4s ease both;
   position: relative;
+}
+
+.phrase-chip.hovered {
+  z-index: 10;
+}
+
+.phrase-source-tag {
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.7;
+  letter-spacing: 0.5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0,0,0,0.2);
+}
+
+.phrase-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 160px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 100;
+  pointer-events: none;
+  animation: tooltipFadeIn 0.2s ease;
+  text-align: left;
+}
+
+.phrase-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--border);
+}
+
+.tooltip-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+}
+
+.tooltip-rarity,
+.tooltip-category {
+  font-weight: 600;
+}
+
+.tooltip-source {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.tooltip-source-label {
+  color: var(--text-secondary);
+}
+
+.tooltip-collected {
+  font-size: 11px;
+  color: var(--accent-gold);
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+@keyframes tooltipFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 .phrase-chip.collected {

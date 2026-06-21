@@ -41,6 +41,18 @@ const createRewardSource = (description: string): PhraseSource => ({
   description
 })
 
+export const createChapterSource = (chapterId: string, chapterTitle: string): PhraseSource => ({
+  type: 'chapter',
+  chapterId,
+  description: `章节掉落 · ${chapterTitle}`
+})
+
+export const createQuestSource = (questId: string, description: string): PhraseSource => ({
+  type: 'quest',
+  questId,
+  description
+})
+
 export const createPhrase = (
   text: string,
   category: PhraseCategory,
@@ -262,6 +274,22 @@ export const generateChapterPhrases = (
     themeMatchBoost: 2.5,
     categoryWeights: catWeights
   })
+}
+
+export const generateChapterPhrasesWithSource = (
+  chapterId: string,
+  chapterTitle: string,
+  themeKeywords: string[],
+  totalCount: number,
+  categoryDistribution: Partial<Record<PhraseCategory, number>> = {}
+): Phrase[] => {
+  const dropped = generateChapterPhrases(themeKeywords, totalCount, categoryDistribution)
+  const source = createChapterSource(chapterId, chapterTitle)
+  return dropped.map(phrase => ({
+    ...phrase,
+    id: pid(),
+    source
+  }))
 }
 
 export const categoryLabels: Record<PhraseCategory, string> = {

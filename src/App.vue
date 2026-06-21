@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState } from '@/types'
-import { chapters, getChapterById } from '@/data/chapters'
+import { chapters, getChapterById, chapterDropConfigs } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
-import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors } from '@/data/phrases'
+import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource } from '@/data/phrases'
 import { calculateScore, generatePoemTitle } from '@/utils/scoring'
 import {
   loadGameState, saveGameState, loadCompositions, saveComposition, deleteComposition,
@@ -35,6 +35,7 @@ import Portfolio from '@/components/Portfolio.vue'
 import SaveDialog from '@/components/SaveDialog.vue'
 import SideQuestPanel from '@/components/SideQuestPanel.vue'
 import SnapshotPanel from '@/components/SnapshotPanel.vue'
+import PhraseCollection from '@/components/PhraseCollection.vue'
 
 const gameState = ref<GameState>(loadGameState())
 
@@ -45,6 +46,7 @@ const collections = ref<Collection[]>(loadCollections())
 
 const showChapters = ref(false)
 const showPortfolio = ref(false)
+const showCollection = ref(false)
 const showSaveDialog = ref(false)
 const showQuestPanel = ref(false)
 const showSnapshotPanel = ref(false)
@@ -53,6 +55,49 @@ const questState = ref<QuestState>(loadQuestState())
 
 const snapshotStorage = ref(loadSnapshots())
 const editingComposition = ref<EditingCompositionState>(loadEditingComposition())
+
+const chapterDropCache = ref<Record<string, Phrase[]>>({})
+
+const getOrGenerateChapterDrops = (chapterId: string): Phrase[] => {
+  if (chapterDropCache.value[chapterId]) {
+    return chapterDropCache.value[chapterId]
+  }
+  const ch = getChapterById(chapterId)
+  if (!ch) return []
+  const config = chapterDropConfigs[chapterId]
+  if (!config || config.totalCount === 0) {
+    chapterDropCache.value[chapterId] = ch.phrases
+    return ch.phrases
+  }
+  const drops = generateChapterPhrasesWithSource(
+    chapterId,
+    ch.title,
+    config.themeKeywords,
+    config.totalCount,
+    config.categoryDistribution
+  )
+  chapterDropCache.value[chapterId] = drops
+  return drops
+}
+
+const regenerateChapterDrops = (chapterId: string): Phrase[] => {
+  const ch = getChapterById(chapterId)
+  if (!ch) return []
+  const config = chapterDropConfigs[chapterId]
+  if (!config || config.totalCount === 0) {
+    chapterDropCache.value[chapterId] = ch.phrases
+    return ch.phrases
+  }
+  const drops = generateChapterPhrasesWithSource(
+    chapterId,
+    ch.title,
+    config.themeKeywords,
+    config.totalCount,
+    config.categoryDistribution
+  )
+  chapterDropCache.value[chapterId] = drops
+  return drops
+}
 
 const isEditingComposition = computed(() => editingComposition.value.compositionId !== null)
 const editingOriginalTitle = computed(() => editingComposition.value.originalTitle || '')
@@ -257,8 +302,9 @@ const availableQuestCount = computed(() => {
 const enhancedChapterPhrases = computed((): Phrase[] => {
   const ch = currentChapter.value
   if (!ch) return []
-  const rewardPhrases = questState.value.chapterRewardPhrases[currentChapterId.value] || []
-  return [...ch.phrases, ...rewardPhrases]
+  const droppedPhrases = getOrGenerateChapterDrops(currentChapterId.value)
+  const rewardPhrasesForChapter = questState.value.chapterRewardPhrases[currentChapterId.value] || []
+  return [...droppedPhrases, ...rewardPhrasesForChapter]
 })
 
 const collectedPhraseTexts = computed((): Set<string> => {
@@ -764,9 +810,9 @@ watch(boardPhrases, () => {
           <div class="section-header">
             <div class="section-title-row">
               <span class="section-title">词句池</span>
-              <span class="collection-badge" title="已收藏词句数">
+              <button class="collection-badge interactive" title="查看词句图鉴" @click="showCollection = true">
                 ✦ {{ collectionProgress }} / {{ totalPhraseCount }}
-              </span>
+              </button>
             </div>
             <span class="section-count">
               {{ (enhancedChapterPhrases.length) - boardPhrases.length }}
@@ -847,6 +893,12 @@ watch(boardPhrases, () => {
       @rename="handleRenameSnapshot"
       @close="showSnapshotPanel = false"
       @create="handleCreateSnapshot"
+    />
+    
+    <PhraseCollection
+      v-if="showCollection"
+      :collection="questState.phraseCollection"
+      @close="showCollection = false"
     />
     
     <div class="bg-decoration">
@@ -985,6 +1037,17 @@ watch(boardPhrases, () => {
   border-radius: 10px;
   border: 1px solid rgba(201, 168, 108, 0.2);
   font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.collection-badge.interactive {
+  cursor: pointer;
+}
+
+.collection-badge.interactive:hover {
+  background: rgba(201, 168, 108, 0.2);
+  border-color: rgba(201, 168, 108, 0.4);
+  transform: translateY(-1px);
 }
 
 .section-title {

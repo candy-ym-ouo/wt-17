@@ -1,12 +1,47 @@
-import type { Chapter, Phrase } from '@/types'
+import type { Chapter, Phrase, PhraseCategory } from '@/types'
 import {
   scenePhrases, emotionPhrases, timePhrases,
-  actionPhrases, imageryPhrases, createPhrase
+  actionPhrases, imageryPhrases, createPhrase,
+  generateChapterPhrases, dropPhrases
 } from './phrases'
 
 const pickRandom = <T>(arr: T[], n: number): T[] => {
   const shuffled = [...arr].sort(() => Math.random() - 0.5)
   return shuffled.slice(0, n)
+}
+
+export interface ChapterDropConfig {
+  themeKeywords: string[]
+  categoryDistribution: Partial<Record<PhraseCategory, number>>
+  totalCount: number
+}
+
+export const chapterDropConfigs: Record<string, ChapterDropConfig> = {
+  ch1: {
+    themeKeywords: ['明月', '落花', '清风', '垂柳', '流水', '春深', '黄昏', '昨夜', '相思', '缱绻'],
+    categoryDistribution: { scene: 0.35, emotion: 0.2, time: 0.15, action: 0.1, imagery: 0.2 },
+    totalCount: 15
+  },
+  ch2: {
+    themeKeywords: ['青山', '残阳', '荒原', '寒烟', '孤舟', '日暮', '秋凉', '岁末', '离愁', '寂寥', '惆怅', '古道', '西风', '归雁', '浊酒'],
+    categoryDistribution: { scene: 0.3, emotion: 0.25, time: 0.15, action: 0.1, imagery: 0.2 },
+    totalCount: 15
+  },
+  ch3: {
+    themeKeywords: ['初雪', '夜雨', '繁星', '古寺', '白云', '黎明', '昨夜', '千年', '相思', '缱绻', '清欢', '遥望', '凭栏', '回眸', '独坐', '故人', '青灯', '素笺', '旧约'],
+    categoryDistribution: { scene: 0.3, emotion: 0.25, time: 0.15, action: 0.15, imagery: 0.15 },
+    totalCount: 16
+  },
+  ch4: {
+    themeKeywords: ['夜雨', '翠竹', '小径', '长河', '古寺', '淡泊', '怅惘', '悲悯', '抚琴', '落笔', '轻吟', '独酌', '锦瑟', '玉笛', '青灯', '残梦'],
+    categoryDistribution: { scene: 0.25, emotion: 0.2, time: 0.15, action: 0.2, imagery: 0.2 },
+    totalCount: 17
+  },
+  ch5: {
+    themeKeywords: [],
+    categoryDistribution: {},
+    totalCount: 0
+  }
 }
 
 export const chapters: Chapter[] = [
