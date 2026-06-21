@@ -190,7 +190,8 @@ const getOrGenerateChapterDrops = (chapterId: string): Phrase[] => {
     ch.title,
     config.themeKeywords,
     config.totalCount,
-    config.categoryDistribution
+    config.categoryDistribution,
+    config.forbiddenWords || []
   )
   chapterDropCache.value[chapterId] = drops
   return drops
@@ -209,7 +210,8 @@ const regenerateChapterDrops = (chapterId: string): Phrase[] => {
     ch.title,
     config.themeKeywords,
     config.totalCount,
-    config.categoryDistribution
+    config.categoryDistribution,
+    config.forbiddenWords || []
   )
   chapterDropCache.value[chapterId] = drops
   return drops

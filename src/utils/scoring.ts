@@ -1,4 +1,4 @@
-import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme, TitleOption, TitleStrategyType, PhasedGuidance, CountPhase, ScorePhase, CategoryPhase, CategoryInsight, LayoutAnalysis } from '@/types'
+import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme, TitleOption, TitleStrategyType, PhasedGuidance, CountPhase, ScorePhase, CategoryPhase, CategoryInsight, LayoutAnalysis, SettlementRule } from '@/types'
 import { rarityScoreBonus } from '@/data/phrases'
 
 const DEFAULT_WEIGHTS: ScoreWeights = {
@@ -6,6 +6,86 @@ const DEFAULT_WEIGHTS: ScoreWeights = {
   imagery: 0.2,
   rhythm: 0.15,
   themeMatch: 0.25
+}
+
+export interface SettlementResult {
+  totalAdjustment: number
+  triggeredRules: Array<{
+    rule: SettlementRule
+    adjustment: number
+  }>
+}
+
+export const applySettlementRules = (
+  phrases: Phrase[],
+  rules: SettlementRule[]
+): SettlementResult => {
+  const triggeredRules: SettlementResult['triggeredRules'] = []
+  let totalAdjustment = 0
+  const phraseTexts = new Set(phrases.map(p => p.text))
+
+  for (const rule of rules) {
+    switch (rule.type) {
+      case 'qualifier_bonus': {
+        const words: string[] = rule.params.words || []
+        const bonusPerWord: number = rule.params.bonusPerWord || 3
+        const matchedCount = words.filter(w => phraseTexts.has(w)).length
+        if (matchedCount > 0) {
+          const adjustment = matchedCount * bonusPerWord
+          totalAdjustment += adjustment
+          triggeredRules.push({ rule, adjustment })
+        }
+        break
+      }
+      case 'hidden_keyword_trigger': {
+        const keywords: string[] = rule.params.keywords || []
+        const bonus: number = rule.params.bonus || 5
+        const matched = keywords.filter(k => phraseTexts.has(k))
+        if (matched.length > 0) {
+          const adjustment = matched.length * bonus
+          totalAdjustment += adjustment
+          triggeredRules.push({ rule, adjustment })
+        }
+        break
+      }
+      case 'forbidden_penalty': {
+        const words: string[] = rule.params.words || []
+        const penaltyPerWord: number = rule.params.penaltyPerWord || 5
+        const matchedCount = words.filter(w => phraseTexts.has(w)).length
+        if (matchedCount > 0) {
+          const adjustment = -(matchedCount * penaltyPerWord)
+          totalAdjustment += adjustment
+          triggeredRules.push({ rule, adjustment })
+        }
+        break
+      }
+      case 'category_combo': {
+        const categories: PhraseCategory[] = rule.params.categories || []
+        const minCount: number = rule.params.minCount || 2
+        const bonus: number = rule.params.bonus || 6
+        const allMet = categories.every(cat =>
+          phrases.filter(p => p.category === cat).length >= minCount
+        )
+        if (allMet && categories.length > 0) {
+          totalAdjustment += bonus
+          triggeredRules.push({ rule, adjustment: bonus })
+        }
+        break
+      }
+      case 'all_hidden_revealed': {
+        const keywords: string[] = rule.params.keywords || []
+        const bonus: number = rule.params.bonus || 8
+        const allRevealed = keywords.length > 0 && keywords.every(k => phraseTexts.has(k))
+        if (allRevealed) {
+          totalAdjustment += bonus
+          triggeredRules.push({ rule, adjustment: bonus })
+        }
+        break
+      }
+    }
+  }
+
+  return { totalAdjustment, triggeredRules }
 }
 
 export const resolveWeights = (boosts: Record<string, number>, themeWeights?: Partial<ScoreWeights>): ScoreWeights => {
@@ -283,7 +363,13 @@ export const calculateScore = (phrases: Phrase[], chapter: Chapter, weightBoosts
   const weights = resolveWeights(weightBoosts || {}, theme?.scoring.scoreWeights)
   const countBonus = Math.min(phrases.length / chapter.targetPhraseCount, 1)
   const baseScore = (coherence * weights.coherence + imagery * weights.imagery + rhythm * weights.rhythm + themeMatch * weights.themeMatch) * 100
-  const total = Math.round(baseScore * countBonus * (1 + rarityBonus + themeBonus))
+  let total = Math.round(baseScore * countBonus * (1 + rarityBonus + themeBonus))
+
+  const rules = chapter.settlementRules || []
+  if (rules.length > 0 && phrases.length > 0) {
+    const settlement = applySettlementRules(phrases, rules)
+    total = Math.max(0, total + settlement.totalAdjustment)
+  }
 
   return {
     coherence: Math.round(coherence * 100),
@@ -1297,13 +1383,65 @@ export const generateDiagnosticReport = (
   const revisionPath = buildRevisionPath(scoreLosses, themeDeviation, wordClassImbalance, phrases.length, targetCount)
   const overallSuggestion = generateOverallSuggestion(score, themeDeviation, wordClassImbalance)
 
+  const rules = chapter.settlementRules || []
+  let settlementResult: DiagnosticReport['settlementResult']
+  let forbiddenWarnings: string[] | undefined
+  let qualifierHints: string[] | undefined
+  let hiddenKeywordStatus: DiagnosticReport['hiddenKeywordStatus']
+
+  if (rules.length > 0 && phrases.length > 0) {
+    const settlement = applySettlementRules(phrases, rules)
+    settlementResult = {
+      totalAdjustment: settlement.totalAdjustment,
+      triggeredRules: settlement.triggeredRules.map(t => ({
+        type: t.rule.type,
+        label: t.rule.params.label || '',
+        adjustment: t.adjustment,
+        description: t.rule.description
+      }))
+    }
+  }
+
+  const forbiddenWords = chapter.forbiddenWords || []
+  if (forbiddenWords.length > 0) {
+    const phraseTexts = new Set(phrases.map(p => p.text))
+    const used = forbiddenWords.filter(w => phraseTexts.has(w))
+    if (used.length > 0) {
+      forbiddenWarnings = used.map(w => `「${w}」为禁用词，将触发扣分`)
+    }
+  }
+
+  const qualifierWords = chapter.qualifierWords || []
+  if (qualifierWords.length > 0) {
+    const phraseTexts = new Set(phrases.map(p => p.text))
+    const unused = qualifierWords.filter(w => !phraseTexts.has(w))
+    if (unused.length > 0 && phrases.length >= 2) {
+      qualifierHints = unused.map(w => `「${w}」为限定词，选用可获加分`)
+    }
+  }
+
+  const hiddenKeywords = chapter.hiddenKeywords || []
+  if (hiddenKeywords.length > 0) {
+    const phraseTexts = new Set(phrases.map(p => p.text))
+    const revealed = hiddenKeywords.filter(k => phraseTexts.has(k))
+    hiddenKeywordStatus = {
+      total: hiddenKeywords.length,
+      revealed,
+      unrevealed: hiddenKeywords.length - revealed.length
+    }
+  }
+
   return {
     scoreLosses,
     themeDeviation,
     wordClassImbalance,
     layoutAnalysis,
     revisionPath,
-    overallSuggestion
+    overallSuggestion,
+    settlementResult,
+    forbiddenWarnings,
+    qualifierHints,
+    hiddenKeywordStatus
   }
 }
 

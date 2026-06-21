@@ -29,6 +29,19 @@ export type PhraseCategory =
   | 'action'     // 动作
   | 'imagery'    // 意象
 
+export type SettlementRuleType =
+  | 'qualifier_bonus'
+  | 'hidden_keyword_trigger'
+  | 'forbidden_penalty'
+  | 'category_combo'
+  | 'all_hidden_revealed'
+
+export interface SettlementRule {
+  type: SettlementRuleType
+  params: Record<string, any>
+  description: string
+}
+
 export interface Chapter {
   id: string
   title: string
@@ -41,6 +54,10 @@ export interface Chapter {
   unlocked: boolean
   targetPhraseCount: number
   hint: string
+  qualifierWords?: string[]
+  forbiddenWords?: string[]
+  hiddenKeywords?: string[]
+  settlementRules?: SettlementRule[]
 }
 
 export interface ScoreBreakdown {
@@ -102,6 +119,13 @@ export interface LayoutAnalysis {
   hasPositions: boolean
 }
 
+export interface SettlementTriggeredRule {
+  type: SettlementRuleType
+  label: string
+  adjustment: number
+  description: string
+}
+
 export interface DiagnosticReport {
   scoreLosses: ScoreLoss[]
   themeDeviation: ThemeDeviation
@@ -109,6 +133,17 @@ export interface DiagnosticReport {
   layoutAnalysis: LayoutAnalysis
   revisionPath: RevisionStep[]
   overallSuggestion: string
+  settlementResult?: {
+    totalAdjustment: number
+    triggeredRules: SettlementTriggeredRule[]
+  }
+  forbiddenWarnings?: string[]
+  qualifierHints?: string[]
+  hiddenKeywordStatus?: {
+    total: number
+    revealed: string[]
+    unrevealed: number
+  }
 }
 
 export interface Composition {

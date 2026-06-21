@@ -1,4 +1,4 @@
-import type { Chapter, Phrase, PhraseCategory, ChapterSoundscape } from '@/types'
+import type { Chapter, Phrase, PhraseCategory, ChapterSoundscape, SettlementRule } from '@/types'
 import {
   scenePhrases, emotionPhrases, timePhrases,
   actionPhrases, imageryPhrases, createPhrase,
@@ -14,34 +14,80 @@ export interface ChapterDropConfig {
   themeKeywords: string[]
   categoryDistribution: Partial<Record<PhraseCategory, number>>
   totalCount: number
+  qualifierWords?: string[]
+  forbiddenWords?: string[]
+  hiddenKeywords?: string[]
 }
 
 export const chapterDropConfigs: Record<string, ChapterDropConfig> = {
   ch1: {
     themeKeywords: ['明月', '落花', '清风', '垂柳', '流水', '春深', '黄昏', '昨夜', '相思', '缱绻'],
     categoryDistribution: { scene: 0.35, emotion: 0.2, time: 0.15, action: 0.1, imagery: 0.2 },
-    totalCount: 15
+    totalCount: 15,
+    qualifierWords: ['明月', '落花', '清风'],
+    forbiddenWords: ['狂喜', '孤苦'],
+    hiddenKeywords: ['春深', '清欢']
   },
   ch2: {
     themeKeywords: ['青山', '残阳', '荒原', '寒烟', '孤舟', '日暮', '秋凉', '岁末', '离愁', '寂寥', '惆怅', '古道', '西风', '归雁', '浊酒'],
     categoryDistribution: { scene: 0.3, emotion: 0.25, time: 0.15, action: 0.1, imagery: 0.2 },
-    totalCount: 15
+    totalCount: 15,
+    qualifierWords: ['残阳', '古道', '西风'],
+    forbiddenWords: ['清欢', '悠然'],
+    hiddenKeywords: ['岁末', '归雁']
   },
   ch3: {
     themeKeywords: ['初雪', '夜雨', '繁星', '古寺', '白云', '黎明', '昨夜', '千年', '相思', '缱绻', '清欢', '遥望', '凭栏', '回眸', '独坐', '故人', '青灯', '素笺', '旧约'],
     categoryDistribution: { scene: 0.3, emotion: 0.25, time: 0.15, action: 0.15, imagery: 0.15 },
-    totalCount: 16
+    totalCount: 16,
+    qualifierWords: ['初雪', '故人', '青灯'],
+    forbiddenWords: ['狂喜', '淡泊'],
+    hiddenKeywords: ['旧约', '素笺']
   },
   ch4: {
     themeKeywords: ['夜雨', '翠竹', '小径', '长河', '古寺', '淡泊', '怅惘', '悲悯', '抚琴', '落笔', '轻吟', '独酌', '锦瑟', '玉笛', '青灯', '残梦'],
     categoryDistribution: { scene: 0.25, emotion: 0.2, time: 0.15, action: 0.2, imagery: 0.2 },
-    totalCount: 17
+    totalCount: 17,
+    qualifierWords: ['夜雨', '抚琴', '独酌'],
+    forbiddenWords: ['清欢', '悠然'],
+    hiddenKeywords: ['玉笛', '残梦']
   },
   ch5: {
     themeKeywords: [],
     categoryDistribution: {},
-    totalCount: 0
+    totalCount: 0,
+    qualifierWords: [],
+    forbiddenWords: [],
+    hiddenKeywords: []
   }
+}
+
+export const chapterSettlementRules: Record<string, SettlementRule[]> = {
+  ch1: [
+    { type: 'qualifier_bonus', params: { words: ['明月', '落花', '清风'], bonusPerWord: 3, label: '春夜三题' }, description: '每含一个春夜限定词（明月、落花、清风），总分加3' },
+    { type: 'hidden_keyword_trigger', params: { keywords: ['春深', '清欢'], bonus: 5, label: '春意暗藏' }, description: '触发任一隐藏题眼（春深、清欢），总分加5' },
+    { type: 'forbidden_penalty', params: { words: ['狂喜', '孤苦'], penaltyPerWord: 5, label: '离题之忌' }, description: '每含一个禁用词（狂喜、孤苦），总分扣5' },
+    { type: 'all_hidden_revealed', params: { keywords: ['春深', '清欢'], bonus: 8, label: '春意尽现' }, description: '全部隐藏题眼触发，额外加8分' },
+  ],
+  ch2: [
+    { type: 'qualifier_bonus', params: { words: ['残阳', '古道', '西风'], bonusPerWord: 3, label: '秋途三景' }, description: '每含一个秋途限定词（残阳、古道、西风），总分加3' },
+    { type: 'hidden_keyword_trigger', params: { keywords: ['岁末', '归雁'], bonus: 5, label: '暮秋暗意' }, description: '触发任一隐藏题眼（岁末、归雁），总分加5' },
+    { type: 'forbidden_penalty', params: { words: ['清欢', '悠然'], penaltyPerWord: 5, label: '不合秋意' }, description: '每含一个禁用词（清欢、悠然），总分扣5' },
+    { type: 'category_combo', params: { categories: ['scene', 'emotion'], minCount: 2, bonus: 6, label: '情景交融' }, description: '景物与情感类各含2词以上，加6分' },
+  ],
+  ch3: [
+    { type: 'qualifier_bonus', params: { words: ['初雪', '故人', '青灯'], bonusPerWord: 3, label: '归途三忆' }, description: '每含一个归途限定词（初雪、故人、青灯），总分加3' },
+    { type: 'hidden_keyword_trigger', params: { keywords: ['旧约', '素笺'], bonus: 5, label: '故园暗约' }, description: '触发任一隐藏题眼（旧约、素笺），总分加5' },
+    { type: 'forbidden_penalty', params: { words: ['狂喜', '淡泊'], penaltyPerWord: 5, label: '不合归心' }, description: '每含一个禁用词（狂喜、淡泊），总分扣5' },
+    { type: 'all_hidden_revealed', params: { keywords: ['旧约', '素笺'], bonus: 8, label: '故园情深' }, description: '全部隐藏题眼触发，额外加8分' },
+  ],
+  ch4: [
+    { type: 'qualifier_bonus', params: { words: ['夜雨', '抚琴', '独酌'], bonusPerWord: 4, label: '江湖三韵' }, description: '每含一个江湖限定词（夜雨、抚琴、独酌），总分加4' },
+    { type: 'hidden_keyword_trigger', params: { keywords: ['玉笛', '残梦'], bonus: 6, label: '夜雨暗声' }, description: '触发任一隐藏题眼（玉笛、残梦），总分加6' },
+    { type: 'forbidden_penalty', params: { words: ['清欢', '悠然'], penaltyPerWord: 6, label: '不合江湖' }, description: '每含一个禁用词（清欢、悠然），总分扣6' },
+    { type: 'category_combo', params: { categories: ['action', 'imagery'], minCount: 2, bonus: 7, label: '行吟意象' }, description: '动作与意象类各含2词以上，加7分' },
+  ],
+  ch5: []
 }
 
 export const chapters: Chapter[] = [
@@ -62,7 +108,11 @@ export const chapters: Chapter[] = [
     ],
     unlocked: true,
     targetPhraseCount: 5,
-    hint: '选取5个词句，构建一幅春夜思念的图景'
+    hint: '选取5个词句，构建一幅春夜思念的图景',
+    qualifierWords: ['明月', '落花', '清风'],
+    forbiddenWords: ['狂喜', '孤苦'],
+    hiddenKeywords: ['春深', '清欢'],
+    settlementRules: chapterSettlementRules.ch1
   },
   {
     id: 'ch2',
@@ -81,7 +131,11 @@ export const chapters: Chapter[] = [
     ],
     unlocked: false,
     targetPhraseCount: 6,
-    hint: '选取6个词句，描绘一段秋日远行的孤寂'
+    hint: '选取6个词句，描绘一段秋日远行的孤寂',
+    qualifierWords: ['残阳', '古道', '西风'],
+    forbiddenWords: ['清欢', '悠然'],
+    hiddenKeywords: ['岁末', '归雁'],
+    settlementRules: chapterSettlementRules.ch2
   },
   {
     id: 'ch3',
@@ -100,7 +154,11 @@ export const chapters: Chapter[] = [
     ],
     unlocked: false,
     targetPhraseCount: 7,
-    hint: '选取7个词句，书写归乡路上的温暖与期盼'
+    hint: '选取7个词句，书写归乡路上的温暖与期盼',
+    qualifierWords: ['初雪', '故人', '青灯'],
+    forbiddenWords: ['狂喜', '淡泊'],
+    hiddenKeywords: ['旧约', '素笺'],
+    settlementRules: chapterSettlementRules.ch3
   },
   {
     id: 'ch4',
@@ -119,7 +177,11 @@ export const chapters: Chapter[] = [
     ],
     unlocked: false,
     targetPhraseCount: 8,
-    hint: '选取8个词句，勾勒江湖夜雨十年的沧桑'
+    hint: '选取8个词句，勾勒江湖夜雨十年的沧桑',
+    qualifierWords: ['夜雨', '抚琴', '独酌'],
+    forbiddenWords: ['清欢', '悠然'],
+    hiddenKeywords: ['玉笛', '残梦'],
+    settlementRules: chapterSettlementRules.ch4
   },
   {
     id: 'ch5',
@@ -142,7 +204,11 @@ export const chapters: Chapter[] = [
     ],
     unlocked: false,
     targetPhraseCount: 10,
-    hint: '自由选择词句，不受格律限制，创造独一无二的诗篇'
+    hint: '自由选择词句，不受格律限制，创造独一无二的诗篇',
+    qualifierWords: [],
+    forbiddenWords: [],
+    hiddenKeywords: [],
+    settlementRules: chapterSettlementRules.ch5
   }
 ]
 

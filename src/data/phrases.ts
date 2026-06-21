@@ -210,14 +210,21 @@ export interface DropConfig {
   themeKeywords?: string[]
   themeMatchBoost?: number
   categoryWeights?: Partial<Record<PhraseCategory, number>>
+  forbiddenWords?: string[]
 }
 
 export const dropPhrases = (pool: Phrase[], config: DropConfig): Phrase[] => {
-  const { totalCount, rarityBoost = {}, themeKeywords = [], themeMatchBoost = 2, categoryWeights = {} } = config
+  const { totalCount, rarityBoost = {}, themeKeywords = [], themeMatchBoost = 2, categoryWeights = {}, forbiddenWords = [] } = config
   
   if (pool.length === 0 || totalCount <= 0) return []
+
+  let filteredPool = pool
+  if (forbiddenWords.length > 0) {
+    const forbiddenSet = new Set(forbiddenWords)
+    filteredPool = pool.filter(p => !forbiddenSet.has(p.text))
+  }
   
-  const weightedPool = pool.map(phrase => {
+  const weightedPool = filteredPool.map(phrase => {
     let weight = 1
     
     const baseRate = rarityDropRates[phrase.rarity] || 0.1
@@ -264,7 +271,8 @@ export const dropPhrases = (pool: Phrase[], config: DropConfig): Phrase[] => {
 export const generateChapterPhrases = (
   themeKeywords: string[],
   totalCount: number,
-  categoryDistribution: Partial<Record<PhraseCategory, number>> = {}
+  categoryDistribution: Partial<Record<PhraseCategory, number>> = {},
+  forbiddenWords: string[] = []
 ): Phrase[] => {
   const allPhrases = getAllPhrases()
   
@@ -280,7 +288,8 @@ export const generateChapterPhrases = (
     totalCount,
     themeKeywords,
     themeMatchBoost: 2.5,
-    categoryWeights: catWeights
+    categoryWeights: catWeights,
+    forbiddenWords
   })
 }
 
@@ -289,9 +298,10 @@ export const generateChapterPhrasesWithSource = (
   chapterTitle: string,
   themeKeywords: string[],
   totalCount: number,
-  categoryDistribution: Partial<Record<PhraseCategory, number>> = {}
+  categoryDistribution: Partial<Record<PhraseCategory, number>> = {},
+  forbiddenWords: string[] = []
 ): Phrase[] => {
-  const dropped = generateChapterPhrases(themeKeywords, totalCount, categoryDistribution)
+  const dropped = generateChapterPhrases(themeKeywords, totalCount, categoryDistribution, forbiddenWords)
   const source = createChapterSource(chapterId, chapterTitle)
   return dropped.map(phrase => ({
     ...phrase,
