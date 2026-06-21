@@ -1,4 +1,4 @@
-import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase, Theme, ThemeState } from '@/types'
+import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase, Theme, ThemeState, StreakState } from '@/types'
 import { DEFAULT_THEME_ID } from '@/data/themes'
 
 const STORAGE_KEYS = {
@@ -21,6 +21,12 @@ const DEFAULT_QUEST_STATE: QuestState = {
   phraseCollection: {
     collectedPhrases: {},
     totalCollected: 0
+  },
+  streak: {
+    currentStreak: 0,
+    bestStreak: 0,
+    lastCompositionTime: null,
+    lastScore: null
   }
 }
 
@@ -252,6 +258,76 @@ export const getPhraseCollection = (): PhraseCollectionState => {
 
 export const getCollectedPhraseCount = (): number => {
   return getPhraseCollection().totalCollected
+}
+
+export const getCollectedPhrasesByRarity = (): Record<string, number> => {
+  const state = loadQuestState()
+  const counts: Record<string, number> = {
+    common: 0,
+    rare: 0,
+    epic: 0,
+    legendary: 0
+  }
+  Object.values(state.phraseCollection.collectedPhrases).forEach(record => {
+    const phraseText = record.phraseText
+    const rarity = determinePhraseRarity(phraseText)
+    if (rarity in counts) {
+      counts[rarity]++
+    }
+  })
+  return counts
+}
+
+const determinePhraseRarity = (text: string): string => {
+  if (text.length >= 5) return 'legendary'
+  if (text.length >= 4) return 'epic'
+  if (text.length >= 3) return 'rare'
+  return 'common'
+}
+
+export const getStreakState = (): StreakState => {
+  const state = loadQuestState()
+  return state.streak
+}
+
+export const updateStreak = (score: number, minStreakScore: number = 60): StreakState => {
+  const state = loadQuestState()
+  const streak = state.streak
+  const now = Date.now()
+
+  if (score >= minStreakScore) {
+    streak.currentStreak++
+    if (streak.currentStreak > streak.bestStreak) {
+      streak.bestStreak = streak.currentStreak
+    }
+  } else {
+    streak.currentStreak = 0
+  }
+
+  streak.lastCompositionTime = now
+  streak.lastScore = score
+
+  saveQuestState(state)
+  return { ...streak }
+}
+
+export const resetStreak = (): void => {
+  const state = loadQuestState()
+  state.streak.currentStreak = 0
+  saveQuestState(state)
+}
+
+export const getCollectionCompositionStats = (): { totalCollections: number; totalInCollections: number } => {
+  const collections = loadCollections()
+  const compositions = loadCompositions()
+  const inCollections = new Set<string>()
+  collections.forEach(c => {
+    c.compositionIds.forEach(id => inCollections.add(id))
+  })
+  return {
+    totalCollections: collections.length,
+    totalInCollections: inCollections.size
+  }
 }
 
 export interface EditingCompositionState {

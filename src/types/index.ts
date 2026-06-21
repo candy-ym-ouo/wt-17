@@ -173,6 +173,13 @@ export type QuestConditionType =
   | 'composition_count'
   | 'chapter_count'
   | 'category_diversity'
+  | 'win_streak'
+  | 'phrase_collection_count'
+  | 'phrase_collection_rarity'
+  | 'rarity_combo'
+  | 'all_chapters_score'
+  | 'collection_composition_count'
+  | 'perfect_clear'
 
 export interface QuestCondition {
   type: QuestConditionType
@@ -215,6 +222,13 @@ export interface PhraseCollectionState {
   totalCollected: number
 }
 
+export interface StreakState {
+  currentStreak: number
+  bestStreak: number
+  lastCompositionTime: number | null
+  lastScore: number | null
+}
+
 export interface QuestState {
   unlockedQuests: string[]
   completedQuests: string[]
@@ -223,6 +237,7 @@ export interface QuestState {
   activeWeightBoosts: Record<string, number>
   chapterRewardPhrases: Record<string, Phrase[]>
   phraseCollection: PhraseCollectionState
+  streak: StreakState
 }
 
 export interface ScoreWeights {

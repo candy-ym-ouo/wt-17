@@ -21,7 +21,8 @@ import type { Collection } from '@/types'
 import {
   loadQuestState, saveQuestState, unlockQuest, completeQuest, claimReward,
   isQuestUnlocked, isQuestCompleted, isRewardClaimed, addWeightBoost,
-  addChapterRewardPhrase, addEarnedTitle, collectPhrase, collectPhrases, getPhraseCollection
+  addChapterRewardPhrase, addEarnedTitle, collectPhrase, collectPhrases, getPhraseCollection,
+  getStreakState, updateStreak, getCollectedPhrasesByRarity, getCollectionCompositionStats
 } from '@/utils/storage'
 import {
   createHistoryManager, createCanvasState, createSnapshot,
@@ -663,6 +664,9 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
 
   const phraseTexts = phrases.map(p => p.text)
   const { newlyCollected } = collectPhrases(phraseTexts, currentChapterId.value)
+  
+  updateStreak(score.value.total, 60)
+  
   questState.value = loadQuestState()
 
   if (currentChapter.value && score.value.total >= 60) {
@@ -888,6 +892,48 @@ const checkCondition = (condition: QuestCondition, ctx: { compositions: Composit
     case 'category_diversity': {
       const categories = new Set(ctx.boardPhrases.map(p => p.category))
       return categories.size >= (params.minCategories as number)
+    }
+    case 'win_streak': {
+      const streak = getStreakState()
+      const minStreak = params.minStreak as number
+      const streakType = params.streakType as 'current' | 'best' | undefined
+      if (streakType === 'best') {
+        return streak.bestStreak >= minStreak
+      }
+      return streak.currentStreak >= minStreak
+    }
+    case 'phrase_collection_count': {
+      const minCount = params.minCount as number
+      const collection = getPhraseCollection()
+      return collection.totalCollected >= minCount
+    }
+    case 'phrase_collection_rarity': {
+      const rarity = params.rarity as string
+      const minCount = params.minCount as number
+      const counts = getCollectedPhrasesByRarity()
+      return (counts[rarity] || 0) >= minCount
+    }
+    case 'rarity_combo': {
+      const rarities = params.rarities as string[]
+      const boardRarities = new Set(ctx.boardPhrases.map(p => p.rarity))
+      return rarities.every(r => boardRarities.has(r as any))
+    }
+    case 'all_chapters_score': {
+      const minScore = params.minScore as number
+      const chapters = getAllBestScores()
+      const chapterIds = Object.keys(chapters)
+      if (chapterIds.length === 0) return false
+      return chapterIds.every(id => chapters[id] >= minScore)
+    }
+    case 'collection_composition_count': {
+      const minCount = params.minCount as number
+      const stats = getCollectionCompositionStats()
+      return stats.totalInCollections >= minCount
+    }
+    case 'perfect_clear': {
+      const targetChapter = params.chapterId as string
+      const chapterComps = ctx.compositions.filter(c => c.chapterId === targetChapter)
+      return chapterComps.some(c => c.score.total >= 95)
     }
     default:
       return false
