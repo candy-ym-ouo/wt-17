@@ -664,3 +664,107 @@ export interface CipaiScoringRuleSet {
   toneTolerance: number
   rhymeTolerance: number
 }
+
+export type AnnotationType = 'praise' | 'suggestion' | 'question' | 'correction' | 'general'
+
+export interface Annotation {
+  id: string
+  compositionId: string
+  phraseId: string | null
+  type: AnnotationType
+  content: string
+  authorId: string
+  authorName: string
+  authorRole: 'mentor' | 'friend' | 'self'
+  createdAt: number
+  updatedAt: number
+  isResolved: boolean
+  resolvedAt?: number
+  replies: AnnotationReply[]
+}
+
+export interface AnnotationReply {
+  id: string
+  content: string
+  authorId: string
+  authorName: string
+  authorRole: 'mentor' | 'friend' | 'self'
+  createdAt: number
+}
+
+export interface CompositionVersion {
+  id: string
+  compositionId: string
+  versionNumber: number
+  label: string
+  description: string
+  phrases: Phrase[]
+  score: ScoreBreakdown
+  createdAt: number
+  createdBy: string
+  basedOnVersionId: string | null
+  changeSummary?: string
+}
+
+export interface PhraseDiff {
+  phraseId: string
+  phraseText: string
+  status: 'added' | 'removed' | 'modified' | 'unchanged'
+  originalPhrase?: Phrase
+  newPhrase?: Phrase
+}
+
+export interface VersionComparison {
+  versionAId: string
+  versionBId: string
+  versionALabel: string
+  versionBLabel: string
+  added: Phrase[]
+  removed: Phrase[]
+  modified: { before: Phrase; after: Phrase }[]
+  unchanged: Phrase[]
+  scoreDifference: {
+    coherence: number
+    imagery: number
+    rhythm: number
+    themeMatch: number
+    total: number
+  }
+}
+
+export type ReviewStatus = 'draft' | 'in_review' | 'reviewed' | 'revised'
+
+export interface MentorReviewSession {
+  id: string
+  compositionId: string
+  status: ReviewStatus
+  mentorId: string | null
+  mentorName: string | null
+  invitedFriendIds: string[]
+  overallComment: string
+  createdAt: number
+  updatedAt: number
+  completedAt?: number
+}
+
+export interface ReviewState {
+  annotations: Annotation[]
+  versions: CompositionVersion[]
+  sessions: MentorReviewSession[]
+}
+
+export const ANNOTATION_TYPE_LABELS: Record<AnnotationType, string> = {
+  praise: '赞赏',
+  suggestion: '建议',
+  question: '疑问',
+  correction: '指正',
+  general: '总评'
+}
+
+export const ANNOTATION_TYPE_COLORS: Record<AnnotationType, string> = {
+  praise: '#7ca97c',
+  suggestion: '#c9a86c',
+  question: '#7a9ea8',
+  correction: '#c56b6b',
+  general: '#a8a498'
+}

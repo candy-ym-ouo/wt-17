@@ -26,6 +26,7 @@ export type StorageDataType =
   | 'editingComposition'
   | 'userActivity'
   | 'gatheringState'
+  | 'reviewState'
 
 export interface VersionedData<T> {
   _schemaVersion: number
@@ -386,6 +387,7 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
     },
   ],
   gatheringState: [],
+  reviewState: [],
 }
 
 function fillSourceGaps(source: PhraseSource | undefined | null, chapterId: string): PhraseSource {
@@ -616,6 +618,7 @@ export function getMigrationStatus(): Record<StorageDataType, { current: number;
     editingComposition: 'poem_slices_editing_composition',
     userActivity: 'poem_slices_user_activity',
     gatheringState: 'poem_slices_gathering_state',
+    reviewState: 'poem_slices_mentor_reviews',
   }
 
   const types: StorageDataType[] = [

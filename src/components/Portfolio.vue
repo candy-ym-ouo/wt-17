@@ -26,6 +26,7 @@ const emit = defineEmits<{
   (e: 'updateCollection', collectionId: string, updates: Partial<Omit<Collection, 'id' | 'createdAt'>>): void
   (e: 'refresh'): void
   (e: 'startCompare', compositions: [Composition, Composition]): void
+  (e: 'openReview', composition: Composition): void
 }>()
 
 const filter = ref<FilterState>({
@@ -564,6 +565,13 @@ const getGroupAccent = (group: GroupedCompositions) => {
                   title="添加到合集"
                 >
                   📚
+                </button>
+                <button 
+                  class="action-btn review-btn"
+                  @click.stop="emit('openReview', comp)"
+                  title="师友评点"
+                >
+                  ✒️
                 </button>
                 <button class="action-btn delete-btn" @click.stop="emit('delete', comp.id)" title="删除">
                   🗑️

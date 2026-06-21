@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, CompositionVersion } from '@/types'
 import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
@@ -56,6 +56,8 @@ import PoetryGatheringPanel from '@/components/PoetryGatheringPanel.vue'
 import GatheringSession from '@/components/GatheringSession.vue'
 import GatheringRankingPanel from '@/components/GatheringRankingPanel.vue'
 import CipaiWorkshop from '@/components/CipaiWorkshop.vue'
+import MentorReviewPanel from '@/components/MentorReviewPanel.vue'
+import VersionCompare from '@/components/VersionCompare.vue'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -129,6 +131,11 @@ const gatheringElapsedSeconds = ref(0)
 const showCipaiWorkshop = ref(false)
 const activeCipaiId = ref<string | null>(null)
 const cipaiScoringMode = ref<CipaiScoringMode>('standard')
+
+const showMentorReview = ref(false)
+const reviewingComposition = ref<Composition | null>(null)
+const showVersionCompare = ref(false)
+const compareVersions = ref<[CompositionVersion, CompositionVersion] | null>(null)
 
 let autoSaveTimer: number | null = null
 
@@ -594,6 +601,79 @@ const handleCipaiRecommendPhrase = (phrase: Phrase) => {
     return
   }
   handlePhraseSelect(phrase)
+}
+
+const handleOpenReview = (comp: Composition) => {
+  reviewingComposition.value = comp
+  showMentorReview.value = true
+  showPortfolio.value = false
+  musicPlayer.playPluckSound()
+}
+
+const handleCloseReview = () => {
+  showMentorReview.value = false
+  reviewingComposition.value = null
+}
+
+const handleLoadVersion = (version: CompositionVersion) => {
+  if (boardPhrases.value.length > 0) {
+    const hint = '加载版本将替换当前画布内容，是否保存当前内容为草稿？'
+    if (confirm(hint)) {
+      saveCurrentDraft('dialog_close')
+    } else {
+      clearDraft()
+    }
+  }
+
+  if (version.compositionId) {
+    const comp = compositions.value.find(c => c.id === version.compositionId)
+    if (comp && comp.chapterId !== currentChapterId.value) {
+      currentChapterId.value = comp.chapterId
+      gameState.value.currentChapterId = comp.chapterId
+      saveGameState({ currentChapterId: comp.chapterId })
+    }
+  }
+
+  boardPhrases.value = version.phrases.map(p => ({
+    ...p,
+    isDragging: false,
+    dragOffset: { x: 0, y: 0 },
+    width: 0,
+    height: 0
+  }))
+
+  historyManager.reset()
+  pushToHistory()
+  snapshotStorage.value = setCurrentSnapshot(null)
+
+  if (version.compositionId) {
+    const comp = compositions.value.find(c => c.id === version.compositionId)
+    if (comp) {
+      setEditingComposition(comp.id, comp.title)
+    }
+  }
+
+  showMentorReview.value = false
+  reviewingComposition.value = null
+  showVersionCompare.value = false
+  compareVersions.value = null
+  musicPlayer.playPluckSound()
+}
+
+const handleStartVersionCompare = (versions: [CompositionVersion, CompositionVersion]) => {
+  compareVersions.value = versions
+  showVersionCompare.value = true
+}
+
+const handleSwapCompareVersions = () => {
+  if (compareVersions.value) {
+    compareVersions.value = [compareVersions.value[1], compareVersions.value[0]]
+  }
+}
+
+const handleCloseVersionCompare = () => {
+  showVersionCompare.value = false
+  compareVersions.value = null
 }
 
 const combinedScore = computed((): ScoreBreakdown => {
@@ -1698,6 +1778,7 @@ watch(currentChapterId, (newId) => {
       @deleteCollection="handleDeleteCollection"
       @updateCollection="handleUpdateCollection"
       @refresh="handleRefreshPortfolio"
+      @openReview="handleOpenReview"
     />
     
     <SaveDialog
@@ -1835,6 +1916,23 @@ watch(currentChapterId, (newId) => {
       @selectCipai="handleSelectCipai"
       @changeScoringMode="handleChangeCipaiScoringMode"
       @selectPhrase="handleCipaiRecommendPhrase"
+    />
+
+    <MentorReviewPanel
+      v-if="showMentorReview && reviewingComposition"
+      :composition="reviewingComposition"
+      @close="handleCloseReview"
+      @loadVersion="handleLoadVersion"
+      @startCompare="handleStartVersionCompare"
+      @loadComposition="handleLoadComposition"
+    />
+
+    <VersionCompare
+      v-if="showVersionCompare && compareVersions"
+      :versions="compareVersions"
+      @close="handleCloseVersionCompare"
+      @loadVersion="handleLoadVersion"
+      @swap="handleSwapCompareVersions"
     />
     
     <div class="bg-decoration">
