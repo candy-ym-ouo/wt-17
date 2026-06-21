@@ -25,6 +25,7 @@ const emit = defineEmits<{
   (e: 'deleteCollection', collectionId: string): void
   (e: 'updateCollection', collectionId: string, updates: Partial<Omit<Collection, 'id' | 'createdAt'>>): void
   (e: 'refresh'): void
+  (e: 'startCompare', compositions: [Composition, Composition]): void
 }>()
 
 const filter = ref<FilterState>({
@@ -46,6 +47,42 @@ const editingCollectionId = ref<string | null>(null)
 const newCollectionName = ref('')
 const newCollectionDesc = ref('')
 const newCollectionColor = ref('#c9a86c')
+
+const compareMode = ref(false)
+const selectedForCompare = ref<string[]>([])
+
+const toggleCompareMode = () => {
+  compareMode.value = !compareMode.value
+  selectedForCompare.value = []
+}
+
+const toggleSelectForCompare = (compId: string, e: Event) => {
+  e.stopPropagation()
+  if (!compareMode.value) {
+    compareMode.value = true
+  }
+  const idx = selectedForCompare.value.indexOf(compId)
+  if (idx > -1) {
+    selectedForCompare.value.splice(idx, 1)
+  } else {
+    if (selectedForCompare.value.length < 2) {
+      selectedForCompare.value.push(compId)
+    }
+    if (selectedForCompare.value.length === 2) {
+      const comp1 = props.compositions.find(c => c.id === selectedForCompare.value[0])
+      const comp2 = props.compositions.find(c => c.id === selectedForCompare.value[1])
+      if (comp1 && comp2) {
+        emit('startCompare', [comp1, comp2])
+      }
+    }
+  }
+}
+
+const isSelectedForCompare = (compId: string) => selectedForCompare.value.includes(compId)
+
+const clearCompareSelection = () => {
+  selectedForCompare.value = []
+}
 
 const gradeOptions: { value: ScoreGrade; label: string; color: string }[] = [
   { value: '神品', label: '神品 (≥90)', color: getGradeColor('神品') },
@@ -239,6 +276,14 @@ const getGroupAccent = (group: GroupedCompositions) => {
           <span class="comp-count">{{ filteredCompositions.length }} / {{ compositions.length }}</span>
         </div>
         <div class="panel-actions">
+          <button 
+            class="icon-btn" 
+            :class="{ active: compareMode }"
+            @click="toggleCompareMode" 
+            :title="compareMode ? '退出对比' : '对比模式'"
+          >
+            <span>⚖️</span>
+          </button>
           <button class="icon-btn" @click="showCollectionManager = true" title="管理合集">
             <span>📚</span>
           </button>
@@ -277,6 +322,26 @@ const getGroupAccent = (group: GroupedCompositions) => {
               {{ sortAscending ? '↑' : '↓' }}
             </button>
           </div>
+        </div>
+      </div>
+
+      <div v-if="compareMode" class="compare-mode-bar">
+        <div class="compare-mode-info">
+          <span class="compare-mode-icon">⚖️</span>
+          <span class="compare-mode-text">
+            对比模式 · 请选择两首作品进行对比 
+            <span v-if="selectedForCompare.length > 0">
+              (已选 {{ selectedForCompare.length }}/2)
+            </span>
+          </span>
+        </div>
+        <div class="compare-mode-actions">
+          <button v-if="selectedForCompare.length > 0" class="compare-clear-btn" @click="clearCompareSelection">
+            清除选择
+          </button>
+          <button class="compare-exit-btn" @click="toggleCompareMode">
+            退出对比
+          </button>
         </div>
       </div>
 
@@ -375,10 +440,27 @@ const getGroupAccent = (group: GroupedCompositions) => {
               v-for="comp in group.compositions"
               :key="comp.id"
               class="composition-card"
-              :class="{ 'editing-card': comp.id === editingCompositionId, 'pinned-card': comp.isPinned }"
+              :class="{ 
+                'editing-card': comp.id === editingCompositionId, 
+                'pinned-card': comp.isPinned,
+                'compare-selected': isSelectedForCompare(comp.id),
+                'compare-mode-active': compareMode
+              }"
             >
               <div v-if="comp.isPinned" class="pin-indicator" title="已置顶">📌</div>
-              <div class="comp-main" @click="emit('load', comp)">
+              <div 
+                v-if="compareMode" 
+                class="compare-select-overlay"
+                @click.stop="toggleSelectForCompare(comp.id, $event)"
+              >
+                <div v-if="isSelectedForCompare(comp.id)" class="compare-selected-badge">
+                  ✓
+                </div>
+                <div v-else class="compare-select-hint">
+                  选择对比
+                </div>
+              </div>
+              <div class="comp-main" @click="compareMode ? toggleSelectForCompare(comp.id, $event) : emit('load', comp)">
                 <div class="comp-header">
                   <div class="comp-title-row">
                     <h3 class="comp-title">{{ comp.title || '无题' }}</h3>
@@ -467,6 +549,14 @@ const getGroupAccent = (group: GroupedCompositions) => {
                   :title="comp.isPinned ? '取消置顶' : '置顶'"
                 >
                   {{ comp.isPinned ? '📌' : '📍' }}
+                </button>
+                <button 
+                  v-if="!compareMode && filteredCompositions.length >= 2"
+                  class="action-btn compare-btn"
+                  @click.stop="toggleSelectForCompare(comp.id, $event)"
+                  title="加入对比"
+                >
+                  ⚖️
                 </button>
                 <button 
                   class="action-btn collection-btn"
@@ -647,6 +737,12 @@ const getGroupAccent = (group: GroupedCompositions) => {
   color: var(--text-primary);
 }
 
+.icon-btn.active {
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+  border: 1px solid rgba(201, 168, 108, 0.4);
+}
+
 .close-btn {
   width: 36px;
   height: 36px;
@@ -660,6 +756,67 @@ const getGroupAccent = (group: GroupedCompositions) => {
 .close-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-primary);
+}
+
+.compare-mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: linear-gradient(90deg, rgba(201, 168, 108, 0.15), rgba(0, 0, 0, 0.2));
+  border-bottom: 1px solid rgba(201, 168, 108, 0.3);
+}
+
+.compare-mode-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.compare-mode-icon {
+  font-size: 16px;
+}
+
+.compare-mode-text {
+  font-size: 13px;
+  color: var(--accent-gold);
+  font-weight: 500;
+}
+
+.compare-mode-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.compare-clear-btn,
+.compare-exit-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.compare-clear-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.compare-clear-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.compare-exit-btn {
+  background: rgba(201, 168, 108, 0.2);
+  border: 1px solid rgba(201, 168, 108, 0.4);
+  color: var(--accent-gold);
+}
+
+.compare-exit-btn:hover {
+  background: rgba(201, 168, 108, 0.3);
 }
 
 .toolbar {
@@ -944,6 +1101,62 @@ const getGroupAccent = (group: GroupedCompositions) => {
   background: linear-gradient(135deg, rgba(139, 69, 87, 0.08), var(--bg-card));
 }
 
+.composition-card.compare-mode-active {
+  cursor: pointer;
+}
+
+.composition-card.compare-selected {
+  border-color: var(--accent-gold);
+  background: linear-gradient(135deg, rgba(201, 168, 108, 0.1), var(--bg-card));
+  box-shadow: 0 0 0 2px rgba(201, 168, 108, 0.3);
+}
+
+.compare-select-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  cursor: pointer;
+}
+
+.composition-card:hover .compare-select-overlay {
+  opacity: 1;
+}
+
+.composition-card.compare-selected .compare-select-overlay {
+  opacity: 1;
+  background: rgba(201, 168, 108, 0.2);
+}
+
+.compare-selected-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent-gold);
+  color: #1a1a2e;
+  font-size: 24px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(201, 168, 108, 0.4);
+}
+
+.compare-select-hint {
+  padding: 8px 20px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--accent-gold);
+  border-radius: 20px;
+  color: var(--accent-gold);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .pin-indicator {
   position: absolute;
   top: 8px;
@@ -1175,6 +1388,11 @@ const getGroupAccent = (group: GroupedCompositions) => {
 .pin-btn.active {
   color: var(--accent-gold);
   background: rgba(201, 168, 108, 0.1);
+}
+
+.compare-btn:hover {
+  background: rgba(201, 168, 108, 0.15);
+  color: var(--accent-gold);
 }
 
 .delete-btn:hover {

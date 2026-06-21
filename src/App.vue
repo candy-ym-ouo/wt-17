@@ -40,6 +40,7 @@ import SideQuestPanel from '@/components/SideQuestPanel.vue'
 import SnapshotPanel from '@/components/SnapshotPanel.vue'
 import PhraseCollection from '@/components/PhraseCollection.vue'
 import ThemePanel from '@/components/ThemePanel.vue'
+import CompositionCompare from '@/components/CompositionCompare.vue'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -81,6 +82,8 @@ const showCollection = ref(false)
 const showSaveDialog = ref(false)
 const showQuestPanel = ref(false)
 const showSnapshotPanel = ref(false)
+const showComparePanel = ref(false)
+const compareCompositions = ref<[Composition, Composition] | null>(null)
 const justUnlockedChapter = ref<string | null>(null)
 const questState = ref<QuestState>(loadQuestState())
 
@@ -797,6 +800,31 @@ const handleRefreshPortfolio = () => {
   collections.value = loadCollections()
 }
 
+const handleStartCompare = (comps: [Composition, Composition]) => {
+  compareCompositions.value = comps
+  showComparePanel.value = true
+  showPortfolio.value = false
+  musicPlayer.playPluckSound()
+}
+
+const handleCloseCompare = () => {
+  showComparePanel.value = false
+  compareCompositions.value = null
+}
+
+const handleSwapCompare = () => {
+  if (compareCompositions.value) {
+    compareCompositions.value = [compareCompositions.value[1], compareCompositions.value[0]]
+    musicPlayer.playPluckSound()
+  }
+}
+
+const handleLoadFromCompare = (comp: Composition) => {
+  handleLoadComposition(comp)
+  showComparePanel.value = false
+  compareCompositions.value = null
+}
+
 const handleNextChapter = () => {
   showSaveDialog.value = false
   if (justUnlockedChapter.value) {
@@ -1175,6 +1203,7 @@ watch(currentChapterId, (newId) => {
       @deleteCollection="handleDeleteCollection"
       @updateCollection="handleUpdateCollection"
       @refresh="handleRefreshPortfolio"
+      @startCompare="handleStartCompare"
     />
     
     <SaveDialog
@@ -1226,6 +1255,15 @@ watch(currentChapterId, (newId) => {
       @close="showThemePanel = false"
       @select="handleSelectTheme"
       @themesChanged="handleThemesChanged"
+    />
+    
+    <CompositionCompare
+      v-if="showComparePanel && compareCompositions"
+      :compositions="compareCompositions"
+      :chaptersTitles="chaptersTitles"
+      @close="handleCloseCompare"
+      @load="handleLoadFromCompare"
+      @swap="handleSwapCompare"
     />
     
     <div v-if="showDraftRestoreDialog && pendingDraft" class="draft-restore-overlay" @click.self="discardDraft">
