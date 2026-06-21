@@ -6,6 +6,9 @@ interface Props {
   musicEnabled: boolean
   musicVolume: number
   questCount: number
+  canUndo: boolean
+  canRedo: boolean
+  snapshotCount: number
 }
 
 defineProps<Props>()
@@ -15,6 +18,9 @@ const emit = defineEmits<{
   (e: 'openChapters'): void
   (e: 'openPortfolio'): void
   (e: 'openQuests'): void
+  (e: 'openSnapshots'): void
+  (e: 'undo'): void
+  (e: 'redo'): void
   (e: 'save'): void
   (e: 'reset'): void
 }>()
@@ -53,6 +59,34 @@ const emit = defineEmits<{
       >
         <span v-if="musicEnabled">♪</span>
         <span v-else>♩</span>
+      </button>
+      <div class="history-group">
+        <button 
+          class="icon-btn history-btn" 
+          :class="{ disabled: !canUndo }"
+          @click="emit('undo')"
+          title="撤销 (Ctrl+Z)"
+          :disabled="!canUndo"
+        >
+          ↶
+        </button>
+        <button 
+          class="icon-btn history-btn" 
+          :class="{ disabled: !canRedo }"
+          @click="emit('redo')"
+          title="重做 (Ctrl+Shift+Z)"
+          :disabled="!canRedo"
+        >
+          ↷
+        </button>
+      </div>
+      <button 
+        class="icon-btn snapshot-btn" 
+        @click="emit('openSnapshots')" 
+        title="布局快照"
+      >
+        📷
+        <span v-if="snapshotCount > 0" class="snapshot-badge">{{ snapshotCount }}</span>
       </button>
       <button class="icon-btn" @click="emit('openPortfolio')" title="作品集">
         📜
@@ -201,6 +235,51 @@ const emit = defineEmits<{
 .icon-btn.active {
   color: var(--accent-gold);
   background: rgba(201, 168, 108, 0.1);
+}
+
+.icon-btn.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.icon-btn.disabled:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+
+.history-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.history-btn {
+  font-size: 18px;
+}
+
+.snapshot-btn {
+  position: relative;
+}
+
+.snapshot-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--accent-gold);
+  color: #1a1a2e;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .quest-btn {

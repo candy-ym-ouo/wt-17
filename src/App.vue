@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition } from '@/types'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState } from '@/types'
 import { chapters, getChapterById } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase } from '@/data/phrases'
@@ -14,6 +14,10 @@ import {
   isQuestUnlocked, isQuestCompleted, isRewardClaimed, addWeightBoost,
   addChapterRewardPhrase, addEarnedTitle
 } from '@/utils/storage'
+import {
+  createHistoryManager, createCanvasState, createSnapshot,
+  addSnapshot, deleteSnapshot, loadSnapshots, setCurrentSnapshot, renameSnapshot
+} from '@/utils/history'
 import { musicPlayer } from '@/utils/music'
 
 import TopHeader from '@/components/TopHeader.vue'
@@ -24,6 +28,7 @@ import ChapterSelect from '@/components/ChapterSelect.vue'
 import Portfolio from '@/components/Portfolio.vue'
 import SaveDialog from '@/components/SaveDialog.vue'
 import SideQuestPanel from '@/components/SideQuestPanel.vue'
+import SnapshotPanel from '@/components/SnapshotPanel.vue'
 
 const gameState = ref<GameState>(loadGameState())
 
@@ -35,8 +40,121 @@ const showChapters = ref(false)
 const showPortfolio = ref(false)
 const showSaveDialog = ref(false)
 const showQuestPanel = ref(false)
+const showSnapshotPanel = ref(false)
 const justUnlockedChapter = ref<string | null>(null)
 const questState = ref<QuestState>(loadQuestState())
+
+const snapshotStorage = ref(loadSnapshots())
+
+const historyManager = createHistoryManager(50)
+const canUndo = ref(false)
+const canRedo = ref(false)
+const isApplyingHistory = ref(false)
+
+const updateHistoryAvailability = () => {
+  canUndo.value = historyManager.canUndo()
+  canRedo.value = historyManager.canRedo()
+}
+
+const pushToHistory = () => {
+  if (isApplyingHistory.value) return
+  const state = createCanvasState(currentChapterId.value, boardPhrases.value)
+  historyManager.push(state)
+  updateHistoryAvailability()
+}
+
+const applyState = (state: CanvasState | null) => {
+  if (!state) {
+    boardPhrases.value = []
+  } else {
+    if (state.chapterId !== currentChapterId.value) {
+      currentChapterId.value = state.chapterId
+      gameState.value.currentChapterId = state.chapterId
+      saveGameState({ currentChapterId: state.chapterId })
+    }
+    boardPhrases.value = state.phrases.map(p => ({
+      ...p,
+      isDragging: false,
+      dragOffset: { x: 0, y: 0 }
+    }))
+  }
+  updateHistoryAvailability()
+}
+
+const handleUndo = () => {
+  if (!historyManager.canUndo()) return
+  isApplyingHistory.value = true
+  const prevState = historyManager.undo()
+  applyState(prevState)
+  musicPlayer.playPluckSound()
+  nextTick(() => {
+    isApplyingHistory.value = false
+  })
+}
+
+const handleRedo = () => {
+  if (!historyManager.canRedo()) return
+  isApplyingHistory.value = true
+  const nextState = historyManager.redo()
+  applyState(nextState)
+  musicPlayer.playPluckSound()
+  nextTick(() => {
+    isApplyingHistory.value = false
+  })
+}
+
+const handleCreateSnapshot = () => {
+  if (boardPhrases.value.length === 0) {
+    alert('画布为空，无法创建快照')
+    return
+  }
+  const snap = createSnapshot(currentChapterId.value, boardPhrases.value)
+  snapshotStorage.value = addSnapshot(snap)
+  musicPlayer.playSuccessSound()
+}
+
+const handleRestoreSnapshot = (snap: HistorySnapshot) => {
+  if (snap.chapterId !== currentChapterId.value) {
+    currentChapterId.value = snap.chapterId
+    gameState.value.currentChapterId = snap.chapterId
+    saveGameState({ currentChapterId: snap.chapterId })
+  }
+  boardPhrases.value = snap.phrases.map(p => ({
+    ...p,
+    isDragging: false,
+    dragOffset: { x: 0, y: 0 },
+    width: 0,
+    height: 0
+  }))
+  snapshotStorage.value = setCurrentSnapshot(snap.id)
+  historyManager.reset()
+  pushToHistory()
+  showSnapshotPanel.value = false
+  musicPlayer.playPluckSound()
+}
+
+const handleDeleteSnapshot = (snapshotId: string) => {
+  if (!confirm('确定要删除这个快照吗？')) return
+  snapshotStorage.value = deleteSnapshot(snapshotId)
+}
+
+const handleRenameSnapshot = (snapshotId: string, newName: string) => {
+  snapshotStorage.value = renameSnapshot(snapshotId, newName)
+}
+
+const handleKeydown = (e: KeyboardEvent) => {
+  const isMeta = e.metaKey || e.ctrlKey
+  if (isMeta && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    handleUndo()
+  } else if (isMeta && (e.key === 'z' || e.key === 'Z') && e.shiftKey) {
+    e.preventDefault()
+    handleRedo()
+  } else if (isMeta && e.key === 'y') {
+    e.preventDefault()
+    handleRedo()
+  }
+}
 
 const canvasBoardRef = ref<InstanceType<typeof CanvasBoard> | null>(null)
 
@@ -150,6 +268,9 @@ const handleSelectChapter = (chapterId: string) => {
   gameState.value.currentChapterId = chapterId
   saveGameState({ currentChapterId: chapterId })
   boardPhrases.value = []
+  historyManager.reset()
+  pushToHistory()
+  snapshotStorage.value = setCurrentSnapshot(null)
   showChapters.value = false
   justUnlockedChapter.value = null
 }
@@ -158,6 +279,8 @@ const handleReset = () => {
   if (boardPhrases.value.length === 0) return
   if (confirm('确定要清空画布吗？')) {
     boardPhrases.value = []
+    snapshotStorage.value = setCurrentSnapshot(null)
+    pushToHistory()
   }
 }
 
@@ -213,6 +336,9 @@ const handleConfirmSave = (title: string) => {
   
   showSaveDialog.value = false
   boardPhrases.value = []
+  historyManager.reset()
+  pushToHistory()
+  snapshotStorage.value = setCurrentSnapshot(null)
   justUnlockedChapter.value = null
 }
 
@@ -231,6 +357,9 @@ const handleLoadComposition = (comp: Composition) => {
     height: 0
   }))
   
+  historyManager.reset()
+  pushToHistory()
+  snapshotStorage.value = setCurrentSnapshot(null)
   showPortfolio.value = false
 }
 
@@ -251,6 +380,9 @@ const handleNextChapter = () => {
     }
   }
   boardPhrases.value = []
+  historyManager.reset()
+  pushToHistory()
+  snapshotStorage.value = setCurrentSnapshot(null)
   justUnlockedChapter.value = null
 }
 
@@ -399,12 +531,21 @@ const handleFirstInteraction = () => {
 onMounted(() => {
   document.addEventListener('click', handleFirstInteraction, { once: true })
   document.addEventListener('touchstart', handleFirstInteraction, { once: true, passive: true })
+  document.addEventListener('keydown', handleKeydown)
+  pushToHistory()
   checkQuestUnlocks()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
 })
 
 watch(boardPhrases, () => {
   checkQuestUnlocks()
   checkQuestCompletion()
+  if (!isApplyingHistory.value) {
+    pushToHistory()
+  }
 }, { deep: true })
 </script>
 
@@ -415,11 +556,17 @@ watch(boardPhrases, () => {
       :musicEnabled="gameState.musicEnabled"
       :musicVolume="gameState.musicVolume"
       :questCount="availableQuestCount"
+      :canUndo="canUndo"
+      :canRedo="canRedo"
+      :snapshotCount="snapshotStorage.snapshots.length"
       @toggleMusic="handleToggleMusic"
       @changeVolume="handleChangeVolume"
       @openChapters="showChapters = true"
       @openPortfolio="showPortfolio = true"
       @openQuests="showQuestPanel = true"
+      @openSnapshots="showSnapshotPanel = true"
+      @undo="handleUndo"
+      @redo="handleRedo"
       @save="handleSave"
       @reset="handleReset"
     />
@@ -511,6 +658,18 @@ watch(boardPhrases, () => {
       :currentChapterId="currentChapterId"
       @close="showQuestPanel = false"
       @claim="handleClaimReward"
+    />
+    
+    <SnapshotPanel
+      v-if="showSnapshotPanel"
+      :snapshots="snapshotStorage.snapshots"
+      :currentSnapshotId="snapshotStorage.currentSnapshotId"
+      :chaptersTitles="chaptersTitles"
+      @restore="handleRestoreSnapshot"
+      @delete="handleDeleteSnapshot"
+      @rename="handleRenameSnapshot"
+      @close="showSnapshotPanel = false"
+      @create="handleCreateSnapshot"
     />
     
     <div class="bg-decoration">

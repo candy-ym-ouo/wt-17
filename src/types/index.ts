@@ -112,3 +112,29 @@ export interface CanvasPhrase extends Phrase {
   isDragging: boolean
   dragOffset: { x: number; y: number }
 }
+
+export interface CanvasState {
+  chapterId: string
+  phrases: CanvasPhrase[]
+  timestamp: number
+}
+
+export interface HistorySnapshot {
+  id: string
+  name: string
+  chapterId: string
+  phrases: CanvasPhrase[]
+  createdAt: number
+  thumbnail?: string
+}
+
+export interface HistoryState {
+  past: CanvasState[]
+  future: CanvasState[]
+  maxHistory: number
+}
+
+export interface SnapshotStorage {
+  snapshots: HistorySnapshot[]
+  currentSnapshotId: string | null
+}
