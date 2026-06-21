@@ -234,15 +234,20 @@ const formatCountdown = (endDate: number): string => {
             </div>
           </div>
 
-          <div v-if="gathering.status === 'active'" class="gathering-footer">
+          <div v-if="gathering.status === 'active' || gathering.status === 'settling'" class="gathering-footer">
             <div class="total-score">
               <span class="score-label">总分</span>
               <span class="score-value" :style="{ color: gathering.accentColor }">{{ getGatheringScore(gathering) }}</span>
               <span class="score-detail">({{ getGatheringCleared(gathering) }}/{{ gathering.chapters.length }}章)</span>
             </div>
-            <button class="archive-btn" @click="emit('archive', gathering.id)">
-              📜 归档作品
-            </button>
+            <div class="footer-actions">
+              <button class="ranking-btn" :style="{ borderColor: gathering.accentColor + '40', color: gathering.accentColor }" @click="emit('viewRanking', gathering.id)">
+                🏆 排行
+              </button>
+              <button v-if="gathering.status === 'active'" class="archive-btn" @click="emit('archive', gathering.id)">
+                📜 归档
+              </button>
+            </div>
           </div>
         </div>
 
@@ -702,6 +707,26 @@ const formatCountdown = (endDate: number): string => {
 .score-detail {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.footer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ranking-btn {
+  padding: 7px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-family: var(--font-serif);
+  background: transparent;
+  border: 1px solid;
+  transition: all 0.2s ease;
+}
+
+.ranking-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .archive-btn {

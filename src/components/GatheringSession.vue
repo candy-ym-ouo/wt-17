@@ -16,7 +16,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'selectPhrase', phrase: Phrase): void
   (e: 'removePhrase', phraseId: string): void
-  (e: 'submit'): void
+  (e: 'submit', elapsedSeconds: number): void
   (e: 'quit'): void
 }>()
 
@@ -92,7 +92,7 @@ onUnmounted(() => {
 
 watch(isTimeUp, (val) => {
   if (val) {
-    emit('submit')
+    emit('submit', elapsedSeconds.value)
   }
 })
 
@@ -207,7 +207,7 @@ const getRarityClass = (rarity: PhraseRarity) => {
         class="submit-btn"
         :disabled="boardPhrases.length === 0"
         :style="{ background: boardPhrases.length > 0 ? `linear-gradient(135deg, ${gatheringAccentColor}, ${gatheringAccentColor}cc)` : undefined, color: boardPhrases.length > 0 ? '#1a1a2e' : undefined }"
-        @click="emit('submit')"
+        @click="emit('submit', elapsedSeconds)"
       >
         {{ isTimeUp ? '时间到，提交作品' : '提交作品' }}
       </button>

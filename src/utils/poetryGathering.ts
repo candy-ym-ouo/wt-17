@@ -1,4 +1,4 @@
-import type { GatheringState, GatheringChapterResult, GatheringBonusRule, Phrase, PhraseRarity } from '@/types'
+import type { GatheringState, GatheringChapterResult, GatheringBonusRule, Phrase, PhraseRarity, GatheringRankEntry, PoetryGathering } from '@/types'
 import { wrapWithVersion, unwrapVersionedData, needsMigration, migrateData } from '@/utils/migration'
 import { rarityLabels } from '@/data/phrases'
 import { createCollection } from '@/utils/storage'
@@ -190,4 +190,77 @@ export const formatTime = (seconds: number): string => {
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+export const buildGatheringRanking = (gathering: PoetryGathering): GatheringRankEntry => {
+  const state = loadGatheringState()
+  const results = state.chapterResults[gathering.id] || []
+  const chapterIds = gathering.chapters.map(ch => ch.id)
+
+  const bestChapterResults: Record<string, GatheringChapterResult> = {}
+  let totalScore = 0
+  const chaptersClearedSet = new Set<string>()
+
+  chapterIds.forEach(chId => {
+    const chapterResults = results.filter(r => r.chapterId === chId)
+    if (chapterResults.length === 0) return
+
+    const best = chapterResults.reduce((a, b) => {
+      const scoreA = a.score + a.bonusAdjustment
+      const scoreB = b.score + b.bonusAdjustment
+      return scoreB > scoreA ? b : a
+    })
+
+    bestChapterResults[chId] = best
+    totalScore += best.score + best.bonusAdjustment
+    chaptersClearedSet.add(chId)
+  })
+
+  const chaptersCleared = chaptersClearedSet.size
+  const rank = totalScore >= 95 && chaptersCleared === gathering.chapters.length
+    ? 1
+    : totalScore >= 85 && chaptersCleared === gathering.chapters.length
+      ? 2
+      : totalScore >= 70 && chaptersCleared >= Math.ceil(gathering.chapters.length / 2)
+        ? 3
+        : totalScore >= 50
+          ? 4
+          : 5
+
+  return {
+    rank,
+    totalScore,
+    chaptersCleared,
+    bestChapterResults
+  }
+}
+
+export const getRankLabel = (rank: number): string => {
+  switch (rank) {
+    case 1: return '诗仙'
+    case 2: return '诗圣'
+    case 3: return '诗豪'
+    case 4: return '诗客'
+    default: return '初学者'
+  }
+}
+
+export const getRankColor = (rank: number): string => {
+  switch (rank) {
+    case 1: return '#ffd700'
+    case 2: return '#c9a86c'
+    case 3: return '#cd7f32'
+    case 4: return '#a8a498'
+    default: return '#6b6858'
+  }
+}
+
+export const getRankIcon = (rank: number): string => {
+  switch (rank) {
+    case 1: return '★'
+    case 2: return '☆'
+    case 3: return '◆'
+    case 4: return '◇'
+    default: return '○'
+  }
 }

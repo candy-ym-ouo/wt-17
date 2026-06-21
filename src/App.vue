@@ -51,6 +51,7 @@ import WelcomeModal from '@/components/WelcomeModal.vue'
 import RecommendationTip from '@/components/RecommendationTip.vue'
 import PoetryGatheringPanel from '@/components/PoetryGatheringPanel.vue'
 import GatheringSession from '@/components/GatheringSession.vue'
+import GatheringRankingPanel from '@/components/GatheringRankingPanel.vue'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -115,6 +116,8 @@ const autoSaveInterval = 30000
 const gatheringState = ref<GatheringState>(loadGatheringState())
 const showGatheringPanel = ref(false)
 const showGatheringSession = ref(false)
+const showGatheringRanking = ref(false)
+const rankingGatheringId = ref<string | null>(null)
 const activeGatheringId = ref<string | null>(null)
 const activeGatheringChapterId = ref<string | null>(null)
 const gatheringBoardPhrases = ref<Phrase[]>([])
@@ -1206,12 +1209,13 @@ const handleGatheringRemovePhrase = (phraseId: string) => {
   gatheringBoardPhrases.value = gatheringBoardPhrases.value.filter(p => p.id !== phraseId)
 }
 
-const handleGatheringSubmit = () => {
+const handleGatheringSubmit = (elapsedSeconds?: number) => {
   if (!activeGatheringId.value || !activeGatheringChapterId.value) return
   const chapter = activeGatheringChapter.value
   if (!chapter) return
 
-  const bonusResult = evaluateBonusRules(gatheringBoardPhrases.value, chapter.bonusRules, gatheringElapsedSeconds.value)
+  const actualElapsed = typeof elapsedSeconds === 'number' ? elapsedSeconds : gatheringElapsedSeconds.value
+  const bonusResult = evaluateBonusRules(gatheringBoardPhrases.value, chapter.bonusRules, actualElapsed)
   const finalScore = gatheringScore.value.total + bonusResult.totalBonus
 
   const now = Date.now()
@@ -1220,7 +1224,7 @@ const handleGatheringSubmit = () => {
     gatheringId: activeGatheringId.value,
     compositionId: `gcomp_${now}`,
     score: gatheringScore.value.total,
-    timeUsedSeconds: gatheringElapsedSeconds.value,
+    timeUsedSeconds: actualElapsed,
     completedAt: now,
     bonusAdjustment: bonusResult.totalBonus,
     triggeredBonuses: bonusResult.triggeredLabels
@@ -1341,6 +1345,18 @@ const handleArchiveGathering = (gatheringId: string) => {
   collections.value = loadCollections()
   musicPlayer.playSuccessSound()
 }
+
+const handleViewGatheringRanking = (gatheringId: string) => {
+  const gathering = getGatheringById(gatheringId)
+  if (!gathering) return
+  rankingGatheringId.value = gatheringId
+  showGatheringRanking.value = true
+}
+
+const rankingGathering = computed(() => {
+  if (!rankingGatheringId.value) return null
+  return getGatheringById(rankingGatheringId.value) || null
+})
 
 onMounted(() => {
   document.addEventListener('click', handleFirstInteraction, { once: true })
@@ -1661,6 +1677,7 @@ watch(currentChapterId, (newId) => {
       @startChapter="handleStartGatheringChapter"
       @claimReward="handleClaimGatheringReward"
       @archive="handleArchiveGathering"
+      @viewRanking="handleViewGatheringRanking"
     />
     
     <GatheringSession
@@ -1672,8 +1689,14 @@ watch(currentChapterId, (newId) => {
       :boardPhrases="gatheringBoardPhrases"
       @selectPhrase="handleGatheringSelectPhrase"
       @removePhrase="handleGatheringRemovePhrase"
-      @submit="handleGatheringSubmit"
+      @submit="handleGatheringSubmit($event)"
       @quit="handleGatheringQuit"
+    />
+    
+    <GatheringRankingPanel
+      v-if="showGatheringRanking && rankingGathering"
+      :gathering="rankingGathering"
+      @close="showGatheringRanking = false"
     />
     
     <div class="bg-decoration">
