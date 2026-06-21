@@ -214,8 +214,8 @@ export const getScoreGrade = (total: number): { grade: string; color: string; co
   return { grade: '习作', color: '#6b6858', comment: '诗无达诂，意蕴由心。' }
 }
 
-export const generatePoemTitle = (phrases: Phrase[], theme?: Theme): string => {
-  const options = generatePoemTitleOptions(phrases, theme)
+export const generatePoemTitle = (phrases: Phrase[], theme?: Theme, chapter?: Chapter): string => {
+  const options = generatePoemTitleOptions(phrases, theme, chapter)
   return options.length > 0 ? options[0].title : '无题'
 }
 
@@ -235,9 +235,12 @@ const STRATEGY_DESCRIPTIONS: Record<TitleStrategyType, string> = {
   classical_style: '遵循古典题名范式，雅致凝练'
 }
 
-const getThemeKeywords = (theme?: Theme): string[] => {
+const getThemeKeywords = (theme?: Theme, chapter?: Chapter): string[] => {
   if (theme && theme.wordPool.keywords.length > 0) {
     return theme.wordPool.keywords
+  }
+  if (chapter) {
+    return themeKeywords[chapter.theme] || []
   }
   return []
 }
@@ -276,20 +279,38 @@ const dedupeTitles = (options: TitleOption[]): TitleOption[] => {
   })
 }
 
-const generateThemeMatchTitle = (phrases: Phrase[], theme?: Theme): TitleOption | null => {
+const CHAPTER_TITLE_PATTERNS: Record<string, { connector: string; preferCategories: PhraseCategory[]; maxWords: number; template?: string }> = {
+  '春夜': { connector: '·', preferCategories: ['scene', 'imagery', 'emotion'], maxWords: 2, template: '春夜·{word1}·{word2}' },
+  '秋思': { connector: '·', preferCategories: ['scene', 'emotion', 'imagery'], maxWords: 2, template: '秋思·{word1}·{word2}' },
+  '归乡': { connector: '·', preferCategories: ['emotion', 'scene', 'imagery'], maxWords: 2, template: '归·{word1}·{word2}' },
+  '江湖': { connector: '·', preferCategories: ['imagery', 'action', 'scene'], maxWords: 2, template: '江湖·{word1}·{word2}' },
+  '自由': { connector: '·', preferCategories: ['scene', 'imagery', 'emotion'], maxWords: 2 }
+}
+
+const generateThemeMatchTitle = (phrases: Phrase[], theme?: Theme, chapter?: Chapter): TitleOption | null => {
   if (phrases.length === 0) return null
 
-  const keywords = getThemeKeywords(theme)
-  const connector = theme?.titlePattern.connector || '·'
-  const template = theme?.titlePattern.template
-  const maxWords = theme?.titlePattern.maxWords || 2
+  const keywords = getThemeKeywords(theme, chapter)
+  let connector = theme?.titlePattern.connector || '·'
+  let template = theme?.titlePattern.template
+  let preferCategories = theme?.titlePattern.preferCategories || ['scene', 'imagery', 'emotion']
+  let maxWords = theme?.titlePattern.maxWords || 2
+
+  if (!theme && chapter) {
+    const chapterPattern = CHAPTER_TITLE_PATTERNS[chapter.theme]
+    if (chapterPattern) {
+      connector = chapterPattern.connector
+      template = chapterPattern.template
+      preferCategories = chapterPattern.preferCategories
+      maxWords = chapterPattern.maxWords
+    }
+  }
 
   let matchedPhrases: Phrase[] = []
   if (keywords.length > 0) {
     matchedPhrases = sortByRarity(phrases.filter(p => keywords.includes(p.text)))
   }
   if (matchedPhrases.length < maxWords) {
-    const preferCategories = theme?.titlePattern.preferCategories || ['scene', 'imagery', 'emotion']
     const remaining = pickFromCategories(
       phrases.filter(p => !matchedPhrases.find(m => m.id === p.id)),
       preferCategories,
@@ -313,13 +334,15 @@ const generateThemeMatchTitle = (phrases: Phrase[], theme?: Theme): TitleOption 
     title,
     strategy: 'theme_match',
     strategyLabel: STRATEGY_LABELS.theme_match,
-    description: STRATEGY_DESCRIPTIONS.theme_match,
+    description: chapter && !theme
+      ? `紧扣「${chapter.theme}」主题，选用高契合度关键词`
+      : STRATEGY_DESCRIPTIONS.theme_match,
     keywords: words,
     score: Math.min(matchScore + (matchedPhrases.length >= maxWords ? 10 : 0), 100)
   }
 }
 
-const generateCoreImageryTitle = (phrases: Phrase[], theme?: Theme): TitleOption | null => {
+const generateCoreImageryTitle = (phrases: Phrase[], theme?: Theme, chapter?: Chapter): TitleOption | null => {
   if (phrases.length === 0) return null
 
   const connector = theme?.titlePattern.connector || '·'
@@ -344,7 +367,7 @@ const generateCoreImageryTitle = (phrases: Phrase[], theme?: Theme): TitleOption
   }
 }
 
-const generateCompositionStructureTitle = (phrases: Phrase[], theme?: Theme): TitleOption | null => {
+const generateCompositionStructureTitle = (phrases: Phrase[], theme?: Theme, chapter?: Chapter): TitleOption | null => {
   if (phrases.length === 0) return null
 
   const connector = theme?.titlePattern.connector || '·'
@@ -383,7 +406,7 @@ const generateCompositionStructureTitle = (phrases: Phrase[], theme?: Theme): Ti
   }
 }
 
-const generateEmotionalCoreTitle = (phrases: Phrase[], theme?: Theme): TitleOption | null => {
+const generateEmotionalCoreTitle = (phrases: Phrase[], theme?: Theme, chapter?: Chapter): TitleOption | null => {
   if (phrases.length === 0) return null
 
   const connector = theme?.titlePattern.connector || '·'
@@ -428,7 +451,7 @@ const CLASSICAL_PATTERNS = [
   { prefix: '', suffix: '引', requireWords: 1 }
 ]
 
-const generateClassicalStyleTitle = (phrases: Phrase[], theme?: Theme): TitleOption | null => {
+const generateClassicalStyleTitle = (phrases: Phrase[], theme?: Theme, chapter?: Chapter): TitleOption | null => {
   if (phrases.length === 0) return null
 
   const preferCategories = theme?.titlePattern.preferCategories || ['scene', 'imagery', 'emotion']
@@ -470,7 +493,7 @@ const generateClassicalStyleTitle = (phrases: Phrase[], theme?: Theme): TitleOpt
   }
 }
 
-export const generatePoemTitleOptions = (phrases: Phrase[], theme?: Theme): TitleOption[] => {
+export const generatePoemTitleOptions = (phrases: Phrase[], theme?: Theme, chapter?: Chapter): TitleOption[] => {
   if (phrases.length === 0) {
     return [{
       title: '无题',
@@ -492,7 +515,7 @@ export const generatePoemTitleOptions = (phrases: Phrase[], theme?: Theme): Titl
 
   const results: TitleOption[] = []
   for (const gen of generators) {
-    const result = gen(phrases, theme)
+    const result = gen(phrases, theme, chapter)
     if (result && result.title.trim().length > 0) {
       results.push(result)
     }

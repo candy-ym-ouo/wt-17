@@ -391,7 +391,7 @@ const poemTitle = computed(() => {
     source: p.source
   }))
   const theme = isFreeRealm.value ? currentTheme.value : undefined
-  return generatePoemTitle(phrases, theme)
+  return generatePoemTitle(phrases, theme, currentChapter.value || undefined)
 })
 
 const poemTitleOptions = computed((): TitleOption[] => {
@@ -407,7 +407,7 @@ const poemTitleOptions = computed((): TitleOption[] => {
     source: p.source
   }))
   const theme = isFreeRealm.value ? currentTheme.value : undefined
-  return generatePoemTitleOptions(phrases, theme)
+  return generatePoemTitleOptions(phrases, theme, currentChapter.value || undefined)
 })
 
 const unlockedChapterIds = computed(() => {
