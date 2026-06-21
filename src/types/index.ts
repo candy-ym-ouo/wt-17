@@ -42,6 +42,13 @@ export interface SettlementRule {
   description: string
 }
 
+export interface SettlementTriggeredRule {
+  type: SettlementRuleType
+  label: string
+  adjustment: number
+  description: string
+}
+
 export interface Chapter {
   id: string
   title: string
@@ -111,19 +118,12 @@ export interface RevisionStep {
 }
 
 export interface LayoutAnalysis {
+  hasPositions: boolean
   spatialRhythm: number
   spatialCompleteness: number
   wordOrderCoherence: number
   readingOrder: string[]
   layoutIssues: string[]
-  hasPositions: boolean
-}
-
-export interface SettlementTriggeredRule {
-  type: SettlementRuleType
-  label: string
-  adjustment: number
-  description: string
 }
 
 export interface DiagnosticReport {
@@ -157,9 +157,6 @@ export interface Composition {
   isPinned?: boolean
   pinnedAt?: number
   collectionIds?: string[]
-  creationDuration?: number
-  coreImagery?: string[]
-  editCount?: number
 }
 
 export interface Collection {
@@ -221,13 +218,6 @@ export type QuestConditionType =
   | 'composition_count'
   | 'chapter_count'
   | 'category_diversity'
-  | 'win_streak'
-  | 'phrase_collection_count'
-  | 'phrase_collection_rarity'
-  | 'rarity_combo'
-  | 'all_chapters_score'
-  | 'collection_composition_count'
-  | 'perfect_clear'
 
 export interface QuestCondition {
   type: QuestConditionType
@@ -270,13 +260,6 @@ export interface PhraseCollectionState {
   totalCollected: number
 }
 
-export interface StreakState {
-  currentStreak: number
-  bestStreak: number
-  lastCompositionTime: number | null
-  lastScore: number | null
-}
-
 export interface QuestState {
   unlockedQuests: string[]
   completedQuests: string[]
@@ -285,7 +268,6 @@ export interface QuestState {
   activeWeightBoosts: Record<string, number>
   chapterRewardPhrases: Record<string, Phrase[]>
   phraseCollection: PhraseCollectionState
-  streak: StreakState
 }
 
 export interface ScoreWeights {
@@ -414,39 +396,4 @@ export interface TitleOption {
   description: string
   keywords: string[]
   score: number
-}
-
-export type CountPhase = 'empty' | 'early' | 'building' | 'sufficient' | 'exceed'
-export type ScorePhase = 'unstarted' | 'nascent' | 'forming' | 'refining' | 'polishing' | 'masterpiece'
-export type CategoryPhase = 'mono' | 'dual' | 'varied' | 'balanced'
-
-export interface CategoryInsight {
-  category: PhraseCategory
-  label: string
-  count: number
-  percentage: number
-  idealPercentage: number
-  status: 'balanced' | 'excess' | 'deficit' | 'none'
-}
-
-export interface PhasedGuidance {
-  countPhase: CountPhase
-  scorePhase: ScorePhase
-  categoryPhase: CategoryPhase
-  progress: {
-    current: number
-    target: number
-    percentage: number
-  }
-  categoryInsights: CategoryInsight[]
-  headline: string
-  primarySuggestion: string
-  secondarySuggestion?: string
-  categorySuggestion?: string
-  scoreSuggestion?: string
-  countSuggestion?: string
-  encouragement: string
-  stageLabel: string
-  stageIcon: string
-  accentTone: 'cold' | 'warm' | 'gold' | 'jade' | 'violet'
 }

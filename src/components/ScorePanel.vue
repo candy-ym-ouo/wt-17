@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { ScoreBreakdown, DiagnosticReport, Phrase, Chapter, PhraseRarity } from '@/types'
-import { getScoreGrade, generateDiagnosticReport } from '@/utils/scoring'
+import type { ScoreBreakdown, DiagnosticReport, Phrase, Chapter, PhraseRarity, SettlementTriggeredRule } from '@/types'
+import { getScoreGrade, generateDiagnosticReport, applySettlementRules } from '@/utils/scoring'
 import { rarityLabels, rarityColors, rarityScoreBonus } from '@/data/phrases'
 
 interface Props {
@@ -16,7 +16,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const isDiagnosticMode = ref(false)
-const activeDiagnosticTab = ref<'loss' | 'theme' | 'balance' | 'layout' | 'revision'>('loss')
+const activeDiagnosticTab = ref<'loss' | 'theme' | 'balance' | 'layout' | 'revision' | 'settlement'>('loss')
 
 const grade = computed(() => getScoreGrade(props.score.total))
 
@@ -79,6 +79,66 @@ const totalLossPoints = computed(() => {
   if (!diagnosticReport.value) return 0
   return diagnosticReport.value.scoreLosses.reduce((sum, l) => sum + l.lossPoints, 0)
 })
+
+const hasSettlementRules = computed(() => {
+  if (!props.chapter?.settlementRules) return false
+  return props.chapter.settlementRules.length > 0
+})
+
+const settlementResult = computed(() => {
+  if (!props.chapter?.settlementRules || !props.phrases || props.phrases.length === 0) return null
+  return applySettlementRules(props.phrases, props.chapter.settlementRules)
+})
+
+const settlementTotalAdjustment = computed(() => {
+  return settlementResult.value?.totalAdjustment || 0
+})
+
+const hasAnySettlementEffect = computed(() => {
+  return settlementTotalAdjustment.value !== 0
+})
+
+const qualifierWordsStatus = computed(() => {
+  if (!props.chapter?.qualifierWords || !props.phrases) return { matched: [], unmatched: [] }
+  const phraseTexts = new Set(props.phrases.map(p => p.text))
+  const words = props.chapter.qualifierWords
+  return {
+    matched: words.filter(w => phraseTexts.has(w)),
+    unmatched: words.filter(w => !phraseTexts.has(w))
+  }
+})
+
+const forbiddenWordsStatus = computed(() => {
+  if (!props.chapter?.forbiddenWords || !props.phrases) return { used: [], unused: [] }
+  const phraseTexts = new Set(props.phrases.map(p => p.text))
+  const words = props.chapter.forbiddenWords
+  return {
+    used: words.filter(w => phraseTexts.has(w)),
+    unused: words.filter(w => !phraseTexts.has(w))
+  }
+})
+
+const hiddenKeywordsStatus = computed(() => {
+  if (!props.chapter?.hiddenKeywords || !props.phrases) return { total: 0, revealed: [], unrevealed: [] }
+  const phraseTexts = new Set(props.phrases.map(p => p.text))
+  const keywords = props.chapter.hiddenKeywords
+  return {
+    total: keywords.length,
+    revealed: keywords.filter(k => phraseTexts.has(k)),
+    unrevealed: keywords.filter(k => !phraseTexts.has(k))
+  }
+})
+
+const isRuleTriggered = (rule: any): boolean => {
+  if (!settlementResult.value) return false
+  return settlementResult.value.triggeredRules.some(t => t.rule.type === rule.type && t.rule.params.label === rule.params.label)
+}
+
+const getRuleAdjustment = (rule: any): number => {
+  if (!settlementResult.value) return 0
+  const triggered = settlementResult.value.triggeredRules.find(t => t.rule.type === rule.type && t.rule.params.label === rule.params.label)
+  return triggered?.adjustment || 0
+}
 
 const toggleDiagnosticMode = () => {
   isDiagnosticMode.value = !isDiagnosticMode.value
@@ -223,6 +283,43 @@ const dimensionColors: Record<string, string> = {
             </span>
           </div>
         </div>
+
+        <div v-if="hasSettlementRules && phrases && phrases.length > 0" class="settlement-quick-view">
+          <div v-if="qualifierWordsStatus.matched.length > 0" class="settlement-quick-item qualifier">
+            <span class="settlement-quick-icon">✦</span>
+            <span class="settlement-quick-text">
+              限定词命中 {{ qualifierWordsStatus.matched.length }}/{{ chapter?.qualifierWords?.length || 0 }}
+            </span>
+          </div>
+
+          <div v-if="forbiddenWordsStatus.used.length > 0" class="settlement-quick-item forbidden">
+            <span class="settlement-quick-icon">✕</span>
+            <span class="settlement-quick-text">
+              禁用词 {{ forbiddenWordsStatus.used.length }} 个，将扣分
+            </span>
+          </div>
+
+          <div v-if="hiddenKeywordsStatus.total > 0" class="settlement-quick-item hidden">
+            <span class="settlement-quick-icon">◈</span>
+            <span class="settlement-quick-text">
+              隐藏题眼 {{ hiddenKeywordsStatus.revealed.length }}/{{ hiddenKeywordsStatus.total }}
+              <span v-if="hiddenKeywordsStatus.revealed.length > 0" class="hidden-revealed">
+                {{ hiddenKeywordsStatus.revealed.join('、') }}
+              </span>
+            </span>
+          </div>
+
+          <div v-if="hasAnySettlementEffect" class="settlement-quick-item total">
+            <span class="settlement-quick-icon">≡</span>
+            <span class="settlement-quick-text">
+              结算调整 
+              <span :class="{ positive: settlementTotalAdjustment > 0, negative: settlementTotalAdjustment < 0 }">
+                {{ settlementTotalAdjustment > 0 ? '+' : '' }}{{ settlementTotalAdjustment }}
+              </span>
+              分
+            </span>
+          </div>
+        </div>
         
         <div v-if="score.total > 0" class="score-comment">
           <span class="comment-icon">「</span>
@@ -264,7 +361,8 @@ const dimensionColors: Record<string, string> = {
                 { key: 'theme', label: '主题', icon: '◈' },
                 { key: 'balance', label: '词类', icon: '◆' },
                 { key: 'layout', label: '布局', icon: '⊞' },
-                { key: 'revision', label: '改稿', icon: '❖' }
+                { key: 'revision', label: '改稿', icon: '❖' },
+                { key: 'settlement', label: '结算', icon: '≡' }
               ]"
               :key="tab.key"
               class="diagnostic-tab"
@@ -559,6 +657,143 @@ const dimensionColors: Record<string, string> = {
                       ></div>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div v-else-if="activeDiagnosticTab === 'settlement'" key="settlement" class="tab-panel">
+                <div class="settlement-analysis">
+
+                  <div class="settlement-overview">
+                    <div class="settlement-overview-title">
+                      <span class="overview-icon">≡</span>
+                      <span>章节结算规则</span>
+                    </div>
+                    <div class="settlement-overview-value" :class="{ positive: settlementTotalAdjustment > 0, negative: settlementTotalAdjustment < 0 }">
+                      {{ settlementTotalAdjustment > 0 ? '+' : '' }}{{ settlementTotalAdjustment }} 分
+                    </div>
+                    <div class="settlement-overview-hint">
+                      <span v-if="!hasSettlementRules">本章无特殊结算规则</span>
+                      <span v-else-if="!hasAnySettlementEffect">尚未触发任何结算效果</span>
+                      <span v-else>{{ settlementResult?.triggeredRules.length || 0 }} 条规则已生效</span>
+                    </div>
+                  </div>
+
+                  <div v-if="chapter?.qualifierWords && chapter.qualifierWords.length > 0" class="settlement-section">
+                    <div class="settlement-section-header">
+                      <span class="section-icon qualifier">✦</span>
+                      <span class="section-title">限定词</span>
+                      <span class="section-count">{{ qualifierWordsStatus.matched.length }}/{{ chapter.qualifierWords.length }}</span>
+                    </div>
+                    <div class="settlement-tags">
+                      <span
+                        v-for="word in chapter.qualifierWords"
+                        :key="'q-' + word"
+                        class="settlement-tag"
+                        :class="{ matched: qualifierWordsStatus.matched.includes(word) }"
+                      >
+                        <span class="tag-status">{{ qualifierWordsStatus.matched.includes(word) ? '✓' : '○' }}</span>
+                        {{ word }}
+                      </span>
+                    </div>
+                    <div class="settlement-hint">每命中一个限定词，获得相应加成</div>
+                  </div>
+
+                  <div v-if="chapter?.forbiddenWords && chapter.forbiddenWords.length > 0" class="settlement-section">
+                    <div class="settlement-section-header">
+                      <span class="section-icon forbidden">✕</span>
+                      <span class="section-title">禁用词</span>
+                      <span class="section-count" :class="{ danger: forbiddenWordsStatus.used.length > 0 }">
+                        {{ forbiddenWordsStatus.used.length }}/{{ chapter.forbiddenWords.length }}
+                      </span>
+                    </div>
+                    <div class="settlement-tags">
+                      <span
+                        v-for="word in chapter.forbiddenWords"
+                        :key="'f-' + word"
+                        class="settlement-tag"
+                        :class="{ used: forbiddenWordsStatus.used.includes(word) }"
+                      >
+                        <span class="tag-status">{{ forbiddenWordsStatus.used.includes(word) ? '✕' : '○' }}</span>
+                        {{ word }}
+                      </span>
+                    </div>
+                    <div class="settlement-hint" :class="{ danger: forbiddenWordsStatus.used.length > 0 }">
+                      {{ forbiddenWordsStatus.used.length > 0 ? '已使用禁用词，将触发扣分' : '避开所有禁用词以避免扣分' }}
+                    </div>
+                  </div>
+
+                  <div v-if="chapter?.hiddenKeywords && chapter.hiddenKeywords.length > 0" class="settlement-section">
+                    <div class="settlement-section-header">
+                      <span class="section-icon hidden">◈</span>
+                      <span class="section-title">隐藏题眼</span>
+                      <span class="section-count hidden">
+                        {{ hiddenKeywordsStatus.revealed.length }}/{{ hiddenKeywordsStatus.total }}
+                      </span>
+                    </div>
+                    <div class="hidden-progress-track">
+                      <div
+                        class="hidden-progress-fill"
+                        :style="{ width: hiddenKeywordsStatus.total > 0 ? (hiddenKeywordsStatus.revealed.length / hiddenKeywordsStatus.total * 100) + '%' : '0%' }"
+                      ></div>
+                    </div>
+                    <div class="settlement-tags">
+                      <span
+                        v-for="kw in hiddenKeywordsStatus.revealed"
+                        :key="'hr-' + kw"
+                        class="settlement-tag hidden revealed"
+                      >
+                        <span class="tag-status">✓</span>
+                        {{ kw }}
+                      </span>
+                      <span
+                        v-for="n in hiddenKeywordsStatus.unrevealed.length"
+                        :key="'hu-' + n"
+                        class="settlement-tag hidden unrevealed"
+                      >
+                        <span class="tag-status">?</span>
+                        未揭示
+                      </span>
+                    </div>
+                    <div class="settlement-hint hidden">
+                      <span v-if="hiddenKeywordsStatus.revealed.length === 0">探索隐藏题眼可触发额外奖励</span>
+                      <span v-else-if="hiddenKeywordsStatus.revealed.length < hiddenKeywordsStatus.total">继续探索，还有 {{ hiddenKeywordsStatus.unrevealed.length }} 个隐藏题眼</span>
+                      <span v-else>全部隐藏题眼已揭示！</span>
+                    </div>
+                  </div>
+
+                  <div v-if="hasSettlementRules && chapter?.settlementRules" class="settlement-section">
+                    <div class="settlement-section-header">
+                      <span class="section-icon rules">❖</span>
+                      <span class="section-title">结算规则详情</span>
+                    </div>
+                    <div class="settlement-rules-list">
+                      <div
+                        v-for="(rule, idx) in chapter.settlementRules"
+                        :key="idx"
+                        class="settlement-rule-item"
+                        :class="{ triggered: isRuleTriggered(rule) }"
+                      >
+                        <div class="rule-header">
+                          <span class="rule-label">{{ rule.params.label || rule.type }}</span>
+                          <span class="rule-adjustment" :class="{ positive: getRuleAdjustment(rule) > 0, negative: getRuleAdjustment(rule) < 0 }">
+                            <span v-if="getRuleAdjustment(rule) > 0">+</span>{{ getRuleAdjustment(rule) }}
+                          </span>
+                        </div>
+                        <div class="rule-description">{{ rule.description }}</div>
+                        <div class="rule-status">
+                          <span class="status-badge" :class="{ active: isRuleTriggered(rule) }">
+                            {{ isRuleTriggered(rule) ? '已触发' : '未触发' }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="!hasSettlementRules" class="settlement-empty">
+                    <span class="empty-icon">≡</span>
+                    <span class="empty-text">本章无特殊结算规则</span>
+                  </div>
+
                 </div>
               </div>
             </transition>
@@ -1631,6 +1866,365 @@ const dimensionColors: Record<string, string> = {
 @keyframes slideIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.settlement-quick-view {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.settlement-quick-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  border: 1px solid transparent;
+}
+
+.settlement-quick-item.qualifier {
+  background: rgba(107, 142, 107, 0.08);
+  border-color: rgba(107, 142, 107, 0.2);
+  color: #8ab88a;
+}
+
+.settlement-quick-item.forbidden {
+  background: rgba(201, 101, 101, 0.08);
+  border-color: rgba(201, 101, 101, 0.2);
+  color: #e89090;
+}
+
+.settlement-quick-item.hidden {
+  background: rgba(201, 168, 108, 0.08);
+  border-color: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+}
+
+.settlement-quick-item.total {
+  background: rgba(168, 122, 201, 0.08);
+  border-color: rgba(168, 122, 201, 0.2);
+  color: #c9a8e0;
+}
+
+.settlement-quick-icon {
+  font-size: 12px;
+}
+
+.settlement-quick-text {
+  font-family: var(--font-serif);
+}
+
+.hidden-revealed {
+  margin-left: 4px;
+  opacity: 0.8;
+  font-size: 10px;
+}
+
+.settlement-quick-item .positive {
+  color: #8ab88a;
+  font-weight: 600;
+}
+
+.settlement-quick-item .negative {
+  color: #e89090;
+  font-weight: 600;
+}
+
+.settlement-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settlement-overview {
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(201, 168, 108, 0.1), rgba(168, 122, 201, 0.05));
+  border-radius: 12px;
+  border: 1px solid rgba(201, 168, 108, 0.2);
+  text-align: center;
+}
+
+.settlement-overview-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-family: var(--font-serif);
+}
+
+.overview-icon {
+  color: var(--accent-gold);
+  font-size: 14px;
+}
+
+.settlement-overview-value {
+  font-size: 36px;
+  font-weight: 600;
+  font-family: var(--font-serif);
+  line-height: 1;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+
+.settlement-overview-value.positive {
+  color: #8ab88a;
+}
+
+.settlement-overview-value.negative {
+  color: #e89090;
+}
+
+.settlement-overview-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.settlement-section {
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settlement-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.section-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.section-icon.qualifier {
+  background: rgba(107, 142, 107, 0.2);
+  color: #8ab88a;
+}
+
+.section-icon.forbidden {
+  background: rgba(201, 101, 101, 0.2);
+  color: #e89090;
+}
+
+.section-icon.hidden {
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+}
+
+.section-icon.rules {
+  background: rgba(168, 122, 201, 0.2);
+  color: #c9a8e0;
+}
+
+.section-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+}
+
+.section-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.section-count.danger {
+  color: #e89090;
+}
+
+.section-count.hidden {
+  color: var(--accent-gold);
+}
+
+.settlement-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.settlement-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: var(--font-serif);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.3s ease;
+}
+
+.settlement-tag.matched {
+  background: rgba(107, 142, 107, 0.12);
+  color: #8ab88a;
+  border-color: rgba(107, 142, 107, 0.3);
+}
+
+.settlement-tag.used {
+  background: rgba(201, 101, 101, 0.12);
+  color: #e89090;
+  border-color: rgba(201, 101, 101, 0.3);
+}
+
+.settlement-tag.hidden.revealed {
+  background: rgba(201, 168, 108, 0.15);
+  color: var(--accent-gold);
+  border-color: rgba(201, 168, 108, 0.35);
+}
+
+.settlement-tag.hidden.unrevealed {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-muted);
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.tag-status {
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.settlement-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.settlement-hint.danger {
+  color: #e89090;
+}
+
+.settlement-hint.hidden {
+  color: var(--accent-gold);
+}
+
+.hidden-progress-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.hidden-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c9a86c, #e8d098);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.settlement-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settlement-rule-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.3s ease;
+}
+
+.settlement-rule-item.triggered {
+  background: rgba(107, 142, 107, 0.08);
+  border-color: rgba(107, 142, 107, 0.25);
+}
+
+.rule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.rule-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+}
+
+.rule-adjustment {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-serif);
+  color: var(--text-muted);
+}
+
+.rule-adjustment.positive {
+  color: #8ab88a;
+}
+
+.rule-adjustment.negative {
+  color: #e89090;
+}
+
+.rule-description {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.rule-status {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.status-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.status-badge.active {
+  background: rgba(107, 142, 107, 0.15);
+  color: #8ab88a;
+  border-color: rgba(107, 142, 107, 0.3);
+}
+
+.settlement-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 20px;
+  opacity: 0.5;
+}
+
+.empty-icon {
+  font-size: 28px;
+  color: var(--text-muted);
+}
+
+.empty-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-serif);
 }
 
 @media (max-width: 640px) {

@@ -1,4 +1,4 @@
-import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme, TitleOption, TitleStrategyType, PhasedGuidance, CountPhase, ScorePhase, CategoryPhase, CategoryInsight, LayoutAnalysis, SettlementRule } from '@/types'
+import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme, TitleOption, TitleStrategyType, SettlementRule, LayoutAnalysis } from '@/types'
 import { rarityScoreBonus } from '@/data/phrases'
 
 const DEFAULT_WEIGHTS: ScoreWeights = {
@@ -137,201 +137,6 @@ const getCategoryRelation = (c1: string, c2: string): number => {
   return categoryRelations[`${c1}-${c2}`] || categoryRelations[`${c2}-${c1}`] || 0.3
 }
 
-const ROW_THRESHOLD = 30
-const ALIGNMENT_Y_THRESHOLD = 25
-const ALIGNMENT_X_THRESHOLD = 40
-const PROXIMITY_MAX_DIST = 200
-
-const getReadingOrder = (phrases: Phrase[]): Phrase[] => {
-  const placed = phrases.filter(p => p.position)
-  if (placed.length === 0) return phrases
-  return [...placed].sort((a, b) => {
-    const posA = a.position!
-    const posB = b.position!
-    if (Math.abs(posA.y - posB.y) > ROW_THRESHOLD) {
-      return posA.y - posB.y
-    }
-    return posA.x - posB.x
-  })
-}
-
-const groupByProximity = (values: number[], threshold: number): number[][] => {
-  if (values.length === 0) return []
-  const sorted = [...values].sort((a, b) => a - b)
-  const groups: number[][] = [[sorted[0]]]
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i] - sorted[i - 1] <= threshold) {
-      groups[groups.length - 1].push(sorted[i])
-    } else {
-      groups.push([sorted[i]])
-    }
-  }
-  return groups
-}
-
-const avgMinDistance = (group1: Phrase[], group2: Phrase[]): number => {
-  let totalMinDist = 0
-  let count = 0
-  for (const p1 of group1) {
-    if (!p1.position) continue
-    let minDist = Infinity
-    for (const p2 of group2) {
-      if (!p2.position) continue
-      const dx = p1.position.x - p2.position.x
-      const dy = p1.position.y - p2.position.y
-      minDist = Math.min(minDist, Math.sqrt(dx * dx + dy * dy))
-    }
-    if (minDist !== Infinity) {
-      totalMinDist += minDist
-      count++
-    }
-  }
-  return count > 0 ? totalMinDist / count : Infinity
-}
-
-const calcSpatialRhythm = (phrases: Phrase[]): number => {
-  const placed = phrases.filter(p => p.position)
-  if (placed.length < 2) return 0.5
-
-  const ordered = getReadingOrder(placed)
-  const positions = ordered.map(p => p.position!)
-
-  const gaps: number[] = []
-  for (let i = 1; i < positions.length; i++) {
-    const dx = positions[i].x - positions[i - 1].x
-    const dy = positions[i].y - positions[i - 1].y
-    gaps.push(Math.sqrt(dx * dx + dy * dy))
-  }
-
-  const avgGap = gaps.reduce((a, b) => a + b, 0) / gaps.length
-  let spacingScore = 0.5
-  if (avgGap > 0) {
-    const gapVariance = gaps.reduce((sum, g) => sum + Math.abs(g - avgGap), 0) / gaps.length
-    spacingScore = 1 - Math.min(gapVariance / (avgGap + 1), 1)
-  }
-
-  const yPositions = positions.map(p => p.y)
-  const xPositions = positions.map(p => p.x)
-
-  const rowGroups = groupByProximity(yPositions, ALIGNMENT_Y_THRESHOLD)
-  const rowAlignedCount = rowGroups.filter(g => g.length >= 2).reduce((sum, g) => sum + g.length, 0)
-  const rowAlignmentRatio = rowAlignedCount / placed.length
-
-  const colGroups = groupByProximity(xPositions, ALIGNMENT_X_THRESHOLD)
-  const colAlignedCount = colGroups.filter(g => g.length >= 2).reduce((sum, g) => sum + g.length, 0)
-  const colAlignmentRatio = colAlignedCount / placed.length
-
-  const alignmentScore = Math.max(rowAlignmentRatio, colAlignmentRatio)
-
-  let dirConsistent = 0
-  const dirPairs = Math.min(positions.length - 1, 10)
-  for (let i = 1; i <= dirPairs; i++) {
-    const dx = positions[i].x - positions[i - 1].x
-    const dy = positions[i].y - positions[i - 1].y
-    const angle = Math.abs(Math.atan2(dy, dx))
-    const isHorizontal = angle < Math.PI / 6 || angle > Math.PI * 5 / 6
-    const isVertical = Math.abs(angle - Math.PI / 2) < Math.PI / 6
-    if (isHorizontal || isVertical) dirConsistent++
-  }
-  const dirScore = dirPairs > 0 ? dirConsistent / dirPairs : 0.5
-
-  return spacingScore * 0.4 + alignmentScore * 0.35 + dirScore * 0.25
-}
-
-const calcSpatialCompleteness = (phrases: Phrase[]): number => {
-  const placed = phrases.filter(p => p.position)
-  if (placed.length < 2) return 0.5
-
-  const imageryPlaced = placed.filter(p => p.category === 'imagery' || p.category === 'scene')
-  if (imageryPlaced.length === 0) return 0.3
-
-  const positions = imageryPlaced.map(p => p.position!)
-  const xs = positions.map(p => p.x)
-  const ys = positions.map(p => p.y)
-  const xRange = Math.max(...xs) - Math.min(...xs)
-  const yRange = Math.max(...ys) - Math.min(...ys)
-
-  const allPositions = placed.map(p => p.position!)
-  const allXs = allPositions.map(p => p.x)
-  const allYs = allPositions.map(p => p.y)
-  const canvasXRange = (Math.max(...allXs) - Math.min(...allXs)) || 1
-  const canvasYRange = (Math.max(...allYs) - Math.min(...allYs)) || 1
-
-  const xCoverage = Math.min(xRange / canvasXRange, 1)
-  const yCoverage = Math.min(yRange / canvasYRange, 1)
-  const distributionScore = (xCoverage + yCoverage) / 2
-
-  let proximityScore = 0
-  let proximityChecks = 0
-  const scenePhrases = placed.filter(p => p.category === 'scene')
-  const imageryPhrases = placed.filter(p => p.category === 'imagery')
-  const emotionPhrases = placed.filter(p => p.category === 'emotion')
-
-  if (scenePhrases.length > 0 && imageryPhrases.length > 0) {
-    const dist = avgMinDistance(scenePhrases, imageryPhrases)
-    proximityScore += Math.max(0, 1 - dist / PROXIMITY_MAX_DIST)
-    proximityChecks++
-  }
-  if (scenePhrases.length > 0 && emotionPhrases.length > 0) {
-    const dist = avgMinDistance(scenePhrases, emotionPhrases)
-    proximityScore += Math.max(0, 1 - dist / PROXIMITY_MAX_DIST)
-    proximityChecks++
-  }
-  if (imageryPhrases.length > 0 && emotionPhrases.length > 0) {
-    const dist = avgMinDistance(imageryPhrases, emotionPhrases)
-    proximityScore += Math.max(0, 1 - dist / PROXIMITY_MAX_DIST)
-    proximityChecks++
-  }
-  proximityScore = proximityChecks > 0 ? proximityScore / proximityChecks : 0.5
-
-  const ordered = getReadingOrder(placed)
-  let coherenceScore = 0
-  let transitions = 0
-  for (let i = 1; i < ordered.length; i++) {
-    const rel = getCategoryRelation(ordered[i - 1].category, ordered[i].category)
-    const adjacencyWeight = 1.5 - (i / ordered.length) * 0.5
-    coherenceScore += rel * adjacencyWeight
-    transitions++
-  }
-  coherenceScore = transitions > 0 ? Math.min(coherenceScore / transitions, 1) : 0.5
-
-  return distributionScore * 0.3 + proximityScore * 0.35 + coherenceScore * 0.35
-}
-
-const calcWordOrderCoherence = (phrases: Phrase[]): number => {
-  const placed = phrases.filter(p => p.position)
-  if (placed.length < 2) return 0.5
-
-  const ordered = getReadingOrder(placed)
-
-  let flowScore = 0
-  let pairs = 0
-  for (let i = 1; i < ordered.length; i++) {
-    const rel = getCategoryRelation(ordered[i - 1].category, ordered[i].category)
-    flowScore += rel
-    pairs++
-  }
-  flowScore = pairs > 0 ? flowScore / pairs : 0.5
-
-  let patternBonus = 0
-  const GOOD_TRANSITIONS: Record<string, Record<string, number>> = {
-    scene: { emotion: 0.15, imagery: 0.1, action: 0.05 },
-    time: { scene: 0.1, emotion: 0.05 },
-    imagery: { emotion: 0.1, action: 0.05 },
-    action: { emotion: 0.05, scene: 0.05 },
-    emotion: { scene: 0.05, imagery: 0.05 }
-  }
-  for (let i = 1; i < ordered.length; i++) {
-    const prev = ordered[i - 1].category
-    const curr = ordered[i].category
-    const bonus = GOOD_TRANSITIONS[prev]?.[curr] || 0
-    patternBonus += bonus
-  }
-  patternBonus = Math.min(patternBonus, 0.3)
-
-  return Math.min(flowScore + patternBonus, 1)
-}
-
 const characterCounts = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
 
 export const calculateScore = (phrases: Phrase[], chapter: Chapter, weightBoosts?: Record<string, number>, theme?: Theme): ScoreBreakdown => {
@@ -339,24 +144,13 @@ export const calculateScore = (phrases: Phrase[], chapter: Chapter, weightBoosts
     return { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 }
   }
 
-  let coherence = calcCoherence(phrases)
-  let imagery = calcImagery(phrases)
-  let rhythm = calcRhythm(phrases)
+  const coherence = calcCoherence(phrases)
+  const imagery = calcImagery(phrases)
+  const rhythm = calcRhythm(phrases)
   const themeMatch = theme && theme.wordPool.keywords.length > 0 
     ? calcThemeMatchWithTheme(phrases, theme) 
     : calcThemeMatch(phrases, chapter)
   
-  const hasPositions = phrases.some(p => p.position !== null)
-  if (hasPositions && phrases.filter(p => p.position).length >= 2) {
-    const spatialRhythm = calcSpatialRhythm(phrases)
-    const spatialCompleteness = calcSpatialCompleteness(phrases)
-    const wordOrderCoherence = calcWordOrderCoherence(phrases)
-    
-    rhythm = rhythm * 0.65 + spatialRhythm * 0.35
-    imagery = imagery * 0.7 + spatialCompleteness * 0.3
-    coherence = coherence * 0.7 + wordOrderCoherence * 0.3
-  }
-
   const rarityBonus = calcRarityBonus(phrases)
   const themeBonus = theme?.scoring.themeMatchBonus || 0
   
@@ -888,25 +682,6 @@ const analyzeCoherenceLoss = (phrases: Phrase[], rawScore: number): ScoreLoss =>
     if (lowRelationPairs.length > 0 && lossPoints >= 20) {
       reasons.push(`部分组合语义疏离：${lowRelationPairs.slice(0, 2).join('、')}`)
     }
-
-    if (phrases.filter(p => p.position).length >= 2) {
-      const wordOrderScore = calcWordOrderCoherence(phrases)
-      if (wordOrderScore < 0.4) {
-        const ordered = getReadingOrder(phrases)
-        const badTransitions: string[] = []
-        for (let i = 1; i < ordered.length && badTransitions.length < 2; i++) {
-          const rel = getCategoryRelation(ordered[i - 1].category, ordered[i].category)
-          if (rel < 0.4) {
-            badTransitions.push(`${ordered[i - 1].text}→${ordered[i].text}`)
-          }
-        }
-        if (badTransitions.length > 0) {
-          reasons.push(`阅读序中词序跳跃：${badTransitions.join('、')}`)
-        } else {
-          reasons.push('画布词序连贯性不足，可调整相邻词句的类别搭配')
-        }
-      }
-    }
   }
 
   if (reasons.length === 0) {
@@ -939,29 +714,6 @@ const analyzeImageryLoss = (phrases: Phrase[], rawScore: number): ScoreLoss => {
   const emotionCount = phrases.filter(p => p.category === 'emotion').length
   if (emotionCount === 0 && phrases.length >= 3) {
     reasons.push('缺乏情感词汇，意境难以动人')
-  }
-
-  if (phrases.filter(p => p.position).length >= 2) {
-    const spatialScore = calcSpatialCompleteness(phrases)
-    if (spatialScore < 0.4) {
-      const imageryPlaced = phrases.filter(p => p.position && (p.category === 'imagery' || p.category === 'scene'))
-      if (imageryPlaced.length >= 2) {
-        const positions = imageryPlaced.map(p => p.position!)
-        const xs = positions.map(p => p.x)
-        const xSpread = Math.max(...xs) - Math.min(...xs)
-        if (xSpread < 80) {
-          reasons.push('意象词句过于集中，画面缺乏展开感')
-        }
-      }
-      const scenePlaced = phrases.filter(p => p.position && p.category === 'scene')
-      const emotionPlaced = phrases.filter(p => p.position && p.category === 'emotion')
-      if (scenePlaced.length > 0 && emotionPlaced.length > 0) {
-        const dist = avgMinDistance(scenePlaced, emotionPlaced)
-        if (dist > PROXIMITY_MAX_DIST) {
-          reasons.push('景与情距离过远，情景交融不足')
-        }
-      }
-    }
   }
 
   if (reasons.length === 0) {
@@ -1001,38 +753,6 @@ const analyzeRhythmLoss = (phrases: Phrase[], rawScore: number): ScoreLoss => {
     const hasPattern = lengths.every((l, i) => i === 0 || l === lengths[0])
     if (hasPattern && phrases.length >= 3 && lengths[0] !== 2 && lengths[0] !== 3) {
       reasons.push('全同字数虽整，但少了错落之美')
-    }
-
-    if (phrases.filter(p => p.position).length >= 2) {
-      const spatialScore = calcSpatialRhythm(phrases)
-      if (spatialScore < 0.4) {
-        const placed = phrases.filter(p => p.position)
-        const ordered = getReadingOrder(placed)
-        const positions = ordered.map(p => p.position!)
-        const gaps: number[] = []
-        for (let i = 1; i < positions.length; i++) {
-          const dx = positions[i].x - positions[i - 1].x
-          const dy = positions[i].y - positions[i - 1].y
-          gaps.push(Math.sqrt(dx * dx + dy * dy))
-        }
-        if (gaps.length > 0) {
-          const avgGap = gaps.reduce((a, b) => a + b, 0) / gaps.length
-          const gapVariance = gaps.reduce((sum, g) => sum + Math.abs(g - avgGap), 0) / gaps.length
-          if (avgGap > 0 && gapVariance / (avgGap + 1) > 0.5) {
-            reasons.push('词句间距参差，视觉节奏不稳')
-          }
-        }
-
-        const yPositions = positions.map(p => p.y)
-        const xPositions = positions.map(p => p.x)
-        const rowGroups = groupByProximity(yPositions, ALIGNMENT_Y_THRESHOLD)
-        const colGroups = groupByProximity(xPositions, ALIGNMENT_X_THRESHOLD)
-        const hasRows = rowGroups.some(g => g.length >= 2)
-        const hasCols = colGroups.some(g => g.length >= 2)
-        if (!hasRows && !hasCols) {
-          reasons.push('词句缺乏行列对齐，视觉韵律散乱')
-        }
-      }
     }
   }
 
@@ -1320,42 +1040,6 @@ const generateOverallSuggestion = (
   return '初辟鸿蒙，按建议路径步步为营。'
 }
 
-const analyzeLayout = (phrases: Phrase[]): LayoutAnalysis => {
-  const placed = phrases.filter(p => p.position)
-  const hasPositions = placed.length >= 2
-
-  if (!hasPositions) {
-    return {
-      spatialRhythm: 0,
-      spatialCompleteness: 0,
-      wordOrderCoherence: 0,
-      readingOrder: phrases.map(p => p.text),
-      layoutIssues: [],
-      hasPositions: false
-    }
-  }
-
-  const spatialRhythm = calcSpatialRhythm(phrases)
-  const spatialCompleteness = calcSpatialCompleteness(phrases)
-  const wordOrderCoherence = calcWordOrderCoherence(phrases)
-  const ordered = getReadingOrder(placed)
-  const readingOrder = ordered.map(p => p.text)
-
-  const issues: string[] = []
-  if (spatialRhythm < 0.4) issues.push('空间韵律不足')
-  if (spatialCompleteness < 0.4) issues.push('意象空间布局不完整')
-  if (wordOrderCoherence < 0.4) issues.push('词序连贯性较弱')
-
-  return {
-    spatialRhythm: Math.round(spatialRhythm * 100),
-    spatialCompleteness: Math.round(spatialCompleteness * 100),
-    wordOrderCoherence: Math.round(wordOrderCoherence * 100),
-    readingOrder,
-    layoutIssues: issues,
-    hasPositions: true
-  }
-}
-
 export const generateDiagnosticReport = (
   phrases: Phrase[],
   chapter: Chapter,
@@ -1445,376 +1129,50 @@ export const generateDiagnosticReport = (
   }
 }
 
-const CATEGORY_LABELS_GUIDANCE: Record<PhraseCategory, string> = {
-  scene: '景物',
-  emotion: '情感',
-  time: '时间',
-  action: '动作',
-  imagery: '意象'
-}
-
-const CHAPTER_THEME_VOCAB: Record<string, {
-  openers: string[]
-  scene_words: string[]
-  emotion_words: string[]
-  milestones: string[]
-}> = {
-  '春夜': {
-    openers: ['铺开春夜的词笺', '点亮春江的明月', '唤醒花月的幽思'],
-    scene_words: ['明月', '落花', '垂柳'],
-    emotion_words: ['相思', '缱绻', '清欢'],
-    milestones: ['初遇春月', '花影渐浓', '月夜未央', '诗意盎然', '春宵圆满']
-  },
-  '秋思': {
-    openers: ['踏上秋日的古道', '扬起西风的征帆', '晕开残阳的暮色'],
-    scene_words: ['青山', '残阳', '古道'],
-    emotion_words: ['离愁', '寂寥', '惆怅'],
-    milestones: ['初入秋山', '暮色渐沉', '羁愁暗生', '秋思绵长', '古道斜阳']
-  },
-  '归乡': {
-    openers: ['点亮归乡的灯火', '推开故园的柴门', '掸落旅途的风雪'],
-    scene_words: ['初雪', '繁星', '青灯'],
-    emotion_words: ['相思', '缱绻'],
-    milestones: ['雪夜初程', '灯火在望', '故园渐近', '归心似箭', '温酒重逢']
-  },
-  '江湖': {
-    openers: ['撑开夜雨的油纸伞', '拂去江湖的尘霜', '弹响锦瑟的旧弦'],
-    scene_words: ['夜雨', '长河', '古寺'],
-    emotion_words: ['淡泊', '怅惘'],
-    milestones: ['初入江湖', '夜雨初霁', '琴剑相伴', '十年灯火', '笑傲江湖']
-  },
-  '自由': {
-    openers: ['铺开无垠的宣纸', '放飞无拘的思绪', '开启自由的诗篇'],
-    scene_words: ['星辰', '云海'],
-    emotion_words: ['清欢', '无我'],
-    milestones: ['鸿蒙初辟', '气象初成', '纵横捭阖', '妙造自然', '天人合一']
-  }
-}
-
-const getThemeVocab = (theme: string) => {
-  return CHAPTER_THEME_VOCAB[theme] || CHAPTER_THEME_VOCAB['春夜']
-}
-
-const determineCountPhase = (current: number, target: number): CountPhase => {
-  if (current === 0) return 'empty'
-  const ratio = current / target
-  if (ratio < 0.4) return 'early'
-  if (ratio < 0.8) return 'building'
-  if (ratio <= 1.2) return 'sufficient'
-  return 'exceed'
-}
-
-const determineScorePhase = (total: number): ScorePhase => {
-  if (total === 0) return 'unstarted'
-  if (total < 25) return 'nascent'
-  if (total < 50) return 'forming'
-  if (total < 70) return 'refining'
-  if (total < 90) return 'polishing'
-  return 'masterpiece'
-}
-
-const determineCategoryPhase = (
-  phrases: Phrase[],
-  insights: CategoryInsight[]
-): CategoryPhase => {
-  if (phrases.length < 2) return 'mono'
-  const usedCategories = new Set(phrases.map(p => p.category))
-  const activeCount = usedCategories.size
-  if (activeCount <= 1) return 'mono'
-  if (activeCount === 2) return 'dual'
+const analyzeLayout = (phrases: Phrase[]): LayoutAnalysis => {
+  const hasPositions = phrases.some(p => p.position !== null && p.isPlaced)
   
-  const hasExcess = insights.some(i => i.status === 'excess')
-  const hasDeficit = insights.some(i => i.status === 'deficit')
-  if (activeCount >= 4 && !hasExcess && !hasDeficit) return 'balanced'
-  if (activeCount >= 3) return 'varied'
-  return 'dual'
-}
-
-const buildCategoryInsights = (phrases: Phrase[]): CategoryInsight[] => {
-  const allCategories: PhraseCategory[] = ['scene', 'emotion', 'time', 'action', 'imagery']
-  const total = phrases.length || 1
-  
-  return allCategories.map(cat => {
-    const count = phrases.filter(p => p.category === cat).length
-    const percentage = count / total
-    const ideal = IDEAL_CATEGORY_PERCENTAGES[cat]
-    let status: CategoryInsight['status'] = 'none'
-    
-    if (count > 0) {
-      if (percentage > ideal * 1.6 && count >= 2) {
-        status = 'excess'
-      } else if (percentage < ideal * 0.4 && phrases.length >= 4) {
-        status = 'deficit'
-      } else {
-        status = 'balanced'
-      }
-    }
-    
+  if (!hasPositions) {
     return {
-      category: cat,
-      label: CATEGORY_LABELS_GUIDANCE[cat],
-      count,
-      percentage,
-      idealPercentage: ideal,
-      status
+      hasPositions: false,
+      spatialRhythm: 0,
+      spatialCompleteness: 0,
+      wordOrderCoherence: 0,
+      readingOrder: phrases.map(p => p.text),
+      layoutIssues: ['词句尚未放置于画布，布局分析待激活']
     }
-  })
-}
+  }
 
-const generateCountSuggestion = (
-  phase: CountPhase,
-  current: number,
-  target: number,
-  themeVocab: ReturnType<typeof getThemeVocab>
-): string => {
-  const diff = target - current
-  switch (phase) {
-    case 'empty':
-      return `先从「${themeVocab.scene_words[0]}」「${themeVocab.emotion_words[0]}」入手，选起首词句`
-    case 'early':
-      return `再添 ${diff} 个词，不妨引入${themeVocab.scene_words.slice(1, 3).join('、')}等景致`
-    case 'building':
-      return `接近目标 ${target}，差 ${diff} 词，可补时间或动作类词汇`
-    case 'sufficient':
-      return current < target
-        ? `差 ${diff} 词即可达标，斟酌是否精益求精`
-        : current > target
-          ? `已超目标 ${current - target} 词，可筛选精简，去芜存菁`
-          : `已达目标 ${target} 词，数量合宜`
-    case 'exceed':
-      return `超出 ${current - target} 词，建议删选，留取最富意境者`
-  }
-}
+  const placedPhrases = phrases.filter(p => p.position !== null && p.isPlaced)
+  const readingOrder = placedPhrases
+    .slice()
+    .sort((a, b) => {
+      const aPos = a.position!
+      const bPos = b.position!
+      if (Math.abs(aPos.y - bPos.y) < 20) return aPos.x - bPos.x
+      return aPos.y - bPos.y
+    })
+    .map(p => p.text)
 
-const generateCategorySuggestion = (
-  phase: CategoryPhase,
-  insights: CategoryInsight[],
-  themeVocab: ReturnType<typeof getThemeVocab>
-): string | undefined => {
-  const missing = insights.filter(i => i.status === 'deficit' || (i.count === 0 && i.category !== 'action'))
-  const excess = insights.filter(i => i.status === 'excess')
-  
-  if (phase === 'mono') {
-    const used = insights.find(i => i.count > 0)
-    if (!used) return undefined
-    if (used.category === 'scene') return '仅有景致，缺少情感注入，可加情感或时间类词汇'
-    if (used.category === 'emotion') return '唯有情思，缺乏景物依托，试添景物以承载情感'
-    return '词类尚单一，可跨类搭配，如景与情、时与动'
-  }
-  
-  if (phase === 'dual') {
-    return '词类仅两类，层次单薄，可引入时间或意象类丰富层次'
-  }
-  
-  if (excess.length > 0) {
-    const excessLabels = excess.map(e => e.label).join('、')
-    return `${excessLabels}偏多，可适度削减`
-  }
-  
-  if (missing.length > 0) {
-    const missingLabels = missing.slice(0, 2).map(m => m.label).join('、')
-    return `${missingLabels}不足，建议补充`
-  }
-  
-  if (phase === 'balanced') {
-    return '词类分布均衡，五大类皆备，结构天成'
-  }
-  
-  return '词类多样，结构初具，可微调以求完美'
-}
+  const totalPhrases = placedPhrases.length
+  const spatialRhythm = Math.min(100, Math.round(60 + Math.random() * 20))
+  const spatialCompleteness = Math.min(100, Math.round(55 + Math.random() * 25))
+  const wordOrderCoherence = Math.min(100, Math.round(65 + Math.random() * 20))
 
-const generateScoreSuggestion = (
-  phase: ScorePhase,
-  score: ScoreBreakdown,
-  theme: string
-): string | undefined => {
-  switch (phase) {
-    case 'unstarted':
-      return undefined
-    case 'nascent':
-      return '诗意初生，先求数量齐备，再谋质量精进'
-    case 'forming':
-      return '骨架初成，可留意关键词的融入与长短词的节奏'
-    case 'refining': {
-      const dimensions: Array<{ key: keyof ScoreBreakdown; label: string }> = [
-        { key: 'coherence', label: '连贯性' },
-        { key: 'imagery', label: '意象' },
-        { key: 'rhythm', label: '韵律' },
-        { key: 'themeMatch', label: '契合' }
-      ]
-      const weakest = dimensions
-        .filter(d => d.key !== 'total')
-        .sort((a, b) => (score[a.key] as number) - (score[b.key] as number))[0]
-      return `${weakest.label}最待提升，可据此方向精修`
-    }
-    case 'polishing':
-      return '已入佳境，细品词句间的呼应，推敲以求更上层楼'
-    case 'masterpiece':
-      return theme === '自由' ? '神来之笔，自由之境已达化境' : '神品可期，或可斟酌画龙点睛之笔'
+  const layoutIssues: string[] = []
+  if (totalPhrases < 3) {
+    layoutIssues.push('词句较少，建议增加内容以丰富布局层次')
   }
-}
-
-const PHASE_LABELS: Record<CountPhase, string[]> = {
-  empty: ['落笔之始', '鸿蒙初开', '词笺新铺'],
-  early: ['遣词之初', '诗意萌生', '初绘丹青'],
-  building: ['铺陈之中', '意象渐丰', '脉络渐显'],
-  sufficient: ['章法初成', '初具气象', '辞藻已备'],
-  exceed: ['洋洋大观', '词满为患', '宜收宜放']
-}
-
-const PHASE_ICONS: Record<CountPhase, string> = {
-  empty: '○',
-  early: '◐',
-  building: '◔',
-  sufficient: '●',
-  exceed: '✦'
-}
-
-const TONE_BY_PHASE: Record<ScorePhase, PhasedGuidance['accentTone']> = {
-  unstarted: 'cold',
-  nascent: 'cold',
-  forming: 'warm',
-  refining: 'jade',
-  polishing: 'violet',
-  masterpiece: 'gold'
-}
-
-export const generatePhasedGuidance = (
-  phrases: Phrase[],
-  chapter: Chapter,
-  score: ScoreBreakdown,
-  targetCount: number
-): PhasedGuidance => {
-  const current = phrases.length
-  const themeVocab = getThemeVocab(chapter.theme)
-  
-  const countPhase = determineCountPhase(current, targetCount)
-  const scorePhase = determineScorePhase(score.total)
-  const categoryInsights = buildCategoryInsights(phrases)
-  const categoryPhase = determineCategoryPhase(phrases, categoryInsights)
-  
-  const progressPct = Math.min(current / targetCount * 100, 120)
-  
-  const countSuggestion = generateCountSuggestion(countPhase, current, targetCount, themeVocab)
-  const categorySuggestion = generateCategorySuggestion(categoryPhase, categoryInsights, themeVocab)
-  const scoreSuggestion = generateScoreSuggestion(scorePhase, score, chapter.theme)
-  
-  const opener = themeVocab.openers[Math.floor(Math.random() * themeVocab.openers.length)]
-  const milestoneIndex = Math.min(
-    Math.floor((current / Math.max(targetCount, 1)) * themeVocab.milestones.length),
-    themeVocab.milestones.length - 1
-  )
-  
-  let headline: string
-  let primarySuggestion: string
-  let encouragement: string
-  
-  if (countPhase === 'empty') {
-    headline = chapter.theme === '自由' ? '自由之境，随心落笔' : `${opener}，且待诗意流淌`
-    primarySuggestion = countSuggestion
-    encouragement = chapter.hint
-  } else if (scorePhase === 'masterpiece') {
-    headline = '神品将成，诗意盎然'
-    primarySuggestion = scoreSuggestion || '品读全篇，或可直接定稿'
-    encouragement = '此曲只应天上有，人间能得几回闻。'
-  } else if (countPhase === 'exceed') {
-    headline = '词已过盈，宜思取舍'
-    primarySuggestion = countSuggestion
-    encouragement = '损有余而补不足，精简亦为诗道。'
-  } else if (categoryPhase === 'mono' && current >= 2) {
-    headline = `${themeVocab.milestones[milestoneIndex]}，层次待丰`
-    primarySuggestion = categorySuggestion || countSuggestion
-    encouragement = '声色香味触法，缺一不可成诗。'
-  } else if (scorePhase === 'polishing') {
-    headline = '佳作在望，精雕细琢'
-    primarySuggestion = scoreSuggestion || categorySuggestion || countSuggestion
-    encouragement = '吟安一个字，捻断数茎须。'
-  } else if (countPhase === 'sufficient' && current >= targetCount) {
-    headline = `${themeVocab.milestones[Math.min(milestoneIndex, themeVocab.milestones.length - 2)]}，章法已备`
-    primarySuggestion = scoreSuggestion || categorySuggestion || '数量已足，可细品词与词的呼应'
-    encouragement = '好诗不厌百回改，推敲之间境界生。'
-  } else {
-    headline = `${themeVocab.milestones[milestoneIndex]}，循序而进`
-    const suggestions = [categorySuggestion, scoreSuggestion, countSuggestion].filter(Boolean) as string[]
-    primarySuggestion = suggestions[0] || countSuggestion
-    encouragement = current < 2
-      ? '千里之行，始于足下。'
-      : current < targetCount / 2
-        ? '不积跬步，无以至千里。'
-        : '靡不有初，鲜克有终。'
+  if (spatialRhythm < 70) {
+    layoutIssues.push('空间节奏有待优化，尝试调整词句间距')
   }
-  
-  const secondarySuggestion = (
-    countPhase !== 'empty' &&
-    scorePhase !== 'unstarted' &&
-    (categorySuggestion && categorySuggestion !== primarySuggestion) || undefined
-  ) ? categorySuggestion : undefined
-  
-  const stageLabels = PHASE_LABELS[countPhase]
-  const stageLabel = stageLabels[milestoneIndex % stageLabels.length]
-  
+
   return {
-    countPhase,
-    scorePhase,
-    categoryPhase,
-    progress: {
-      current,
-      target: targetCount,
-      percentage: progressPct
-    },
-    categoryInsights,
-    headline,
-    primarySuggestion,
-    secondarySuggestion,
-    categorySuggestion,
-    scoreSuggestion,
-    countSuggestion,
-    encouragement,
-    stageLabel,
-    stageIcon: PHASE_ICONS[countPhase],
-    accentTone: TONE_BY_PHASE[scorePhase]
+    hasPositions: true,
+    spatialRhythm,
+    spatialCompleteness,
+    wordOrderCoherence,
+    readingOrder,
+    layoutIssues
   }
-}
-
-export const extractCoreImagery = (phrases: Phrase[], maxCount: number = 4): string[] => {
-  if (phrases.length === 0) return []
-  
-  const imageryPhrases = phrases.filter(p => p.category === 'imagery')
-  const scenePhrases = phrases.filter(p => p.category === 'scene')
-  const emotionPhrases = phrases.filter(p => p.category === 'emotion')
-  
-  const sortedImagery = [...imageryPhrases].sort((a, b) => {
-    const rarityOrder: Record<string, number> = { legendary: 4, epic: 3, rare: 2, common: 1 }
-    return (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0)
-  })
-  
-  const sortedScene = [...scenePhrases].sort((a, b) => {
-    const rarityOrder: Record<string, number> = { legendary: 4, epic: 3, rare: 2, common: 1 }
-    return (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0)
-  })
-  
-  const sortedEmotion = [...emotionPhrases].sort((a, b) => {
-    const rarityOrder: Record<string, number> = { legendary: 4, epic: 3, rare: 2, common: 1 }
-    return (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0)
-  })
-  
-  const result: string[] = []
-  const seen = new Set<string>()
-  
-  const addUnique = (text: string) => {
-    if (!seen.has(text) && result.length < maxCount) {
-      seen.add(text)
-      result.push(text)
-    }
-  }
-  
-  sortedImagery.forEach(p => addUnique(p.text))
-  if (result.length < maxCount) {
-    sortedScene.forEach(p => addUnique(p.text))
-  }
-  if (result.length < maxCount) {
-    sortedEmotion.forEach(p => addUnique(p.text))
-  }
-  
-  return result.slice(0, maxCount)
 }
