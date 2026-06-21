@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption } from '@/types'
 import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
-import { calculateScore, generatePoemTitle } from '@/utils/scoring'
+import { calculateScore, generatePoemTitle, generatePoemTitleOptions } from '@/utils/scoring'
 import { getThemeById, getDefaultTheme } from '@/data/themes'
 import { loadThemeState, getCurrentThemeId, setCurrentTheme, getCustomThemes } from '@/utils/storage'
 import {
@@ -392,6 +392,22 @@ const poemTitle = computed(() => {
   }))
   const theme = isFreeRealm.value ? currentTheme.value : undefined
   return generatePoemTitle(phrases, theme)
+})
+
+const poemTitleOptions = computed((): TitleOption[] => {
+  const phrases = boardPhrases.value.map(p => ({
+    id: p.id,
+    text: p.text,
+    category: p.category,
+    position: p.position,
+    rotation: p.rotation,
+    isPlaced: p.isPlaced,
+    weight: p.weight,
+    rarity: p.rarity,
+    source: p.source
+  }))
+  const theme = isFreeRealm.value ? currentTheme.value : undefined
+  return generatePoemTitleOptions(phrases, theme)
 })
 
 const unlockedChapterIds = computed(() => {
@@ -1164,6 +1180,7 @@ watch(currentChapterId, (newId) => {
     <SaveDialog
       :visible="showSaveDialog"
       :title="poemTitle"
+      :titleOptions="poemTitleOptions"
       :score="score"
       :unlockedNext="!!justUnlockedChapter"
       :nextChapterTitle="justUnlockedChapter"

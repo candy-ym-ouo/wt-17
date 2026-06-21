@@ -336,3 +336,19 @@ export interface ThemeState {
   currentThemeId: string
   customThemes: Theme[]
 }
+
+export type TitleStrategyType =
+  | 'theme_match'
+  | 'core_imagery'
+  | 'composition_structure'
+  | 'emotional_core'
+  | 'classical_style'
+
+export interface TitleOption {
+  title: string
+  strategy: TitleStrategyType
+  strategyLabel: string
+  description: string
+  keywords: string[]
+  score: number
+}

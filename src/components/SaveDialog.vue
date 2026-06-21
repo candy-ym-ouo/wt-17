@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import type { Composition, ScoreBreakdown } from '@/types'
+import { ref, watch, computed } from 'vue'
+import type { Composition, ScoreBreakdown, TitleOption } from '@/types'
 import { getScoreGrade } from '@/utils/scoring'
 
 type PostSaveMode = 'finish' | 'continue'
@@ -8,6 +8,7 @@ type PostSaveMode = 'finish' | 'continue'
 interface Props {
   visible: boolean
   title: string
+  titleOptions?: TitleOption[]
   score: ScoreBreakdown
   unlockedNext: boolean
   nextChapterTitle: string | null
@@ -24,14 +25,40 @@ const emit = defineEmits<{
 }>()
 
 const inputTitle = ref('')
+const selectedOptionIndex = ref(0)
 const postSaveMode = ref<PostSaveMode>('finish')
+
+const displayOptions = computed((): TitleOption[] => {
+  if (props.titleOptions && props.titleOptions.length > 0) {
+    return props.titleOptions
+  }
+  return [{
+    title: props.title || '无题',
+    strategy: 'classical_style',
+    strategyLabel: '推荐',
+    description: '系统自动生成标题',
+    keywords: [],
+    score: 80
+  }]
+})
 
 watch(() => props.visible, (v) => {
   if (v) {
-    inputTitle.value = props.title
+    selectedOptionIndex.value = 0
+    inputTitle.value = displayOptions.value.length > 0 ? displayOptions.value[0].title : (props.title || '无题')
     postSaveMode.value = 'finish'
   }
 })
+
+watch(selectedOptionIndex, (idx) => {
+  if (displayOptions.value[idx]) {
+    inputTitle.value = displayOptions.value[idx].title
+  }
+})
+
+const selectOption = (index: number) => {
+  selectedOptionIndex.value = index
+}
 
 const grade = () => getScoreGrade(props.score.total)
 </script>
@@ -62,8 +89,41 @@ const grade = () => getScoreGrade(props.score.total)
           <span class="quote">」</span>
         </div>
         
+        <div class="title-suggestions-section">
+          <label class="input-label">
+            <span class="label-icon">✦</span>
+            推荐题名
+          </label>
+          <div class="title-options">
+            <button
+              v-for="(option, index) in displayOptions"
+              :key="option.title + index"
+              class="title-option-card"
+              :class="{ active: selectedOptionIndex === index }"
+              @click="selectOption(index)"
+            >
+              <div class="option-header">
+                <span class="option-title">{{ option.title }}</span>
+                <span class="option-score" :style="{ opacity: 0.5 + option.score / 200 }">
+                  {{ option.score }}分
+                </span>
+              </div>
+              <div class="option-meta">
+                <span class="option-strategy">{{ option.strategyLabel }}</span>
+                <span class="option-keywords" v-if="option.keywords.length > 0">
+                  {{ option.keywords.join(' · ') }}
+                </span>
+              </div>
+              <div class="option-desc">{{ option.description }}</div>
+            </button>
+          </div>
+        </div>
+
         <div class="title-input-group">
-          <label class="input-label">题名</label>
+          <label class="input-label">
+            <span class="label-icon">✎</span>
+            自定义题名
+          </label>
           <input 
             v-model="inputTitle"
             type="text" 
@@ -410,5 +470,120 @@ const grade = () => getScoreGrade(props.score.total)
 
 .btn-saveas:hover {
   background: rgba(91, 122, 140, 0.25);
+}
+
+.title-suggestions-section {
+  margin-bottom: 16px;
+}
+
+.label-icon {
+  margin-right: 4px;
+  color: var(--accent-gold);
+  font-size: 11px;
+}
+
+.title-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.title-options::-webkit-scrollbar {
+  width: 4px;
+}
+
+.title-options::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.title-options::-webkit-scrollbar-thumb {
+  background: rgba(201, 168, 108, 0.2);
+  border-radius: 2px;
+}
+
+.title-option-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  font-family: var(--font-serif);
+}
+
+.title-option-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(201, 168, 108, 0.3);
+}
+
+.title-option-card.active {
+  background: rgba(201, 168, 108, 0.08);
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 1px rgba(201, 168, 108, 0.2);
+}
+
+.option-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.option-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: 1px;
+}
+
+.title-option-card.active .option-title {
+  color: var(--accent-gold);
+}
+
+.option-score {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-serif);
+  flex-shrink: 0;
+}
+
+.title-option-card.active .option-score {
+  color: var(--accent-gold);
+}
+
+.option-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.option-strategy {
+  font-size: 11px;
+  color: var(--accent-gold);
+  padding: 2px 8px;
+  background: rgba(201, 168, 108, 0.1);
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.option-keywords {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+.option-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  opacity: 0.85;
 }
 </style>

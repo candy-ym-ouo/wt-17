@@ -1,4 +1,4 @@
-import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme } from '@/types'
+import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme, TitleOption, TitleStrategyType } from '@/types'
 import { rarityScoreBonus } from '@/data/phrases'
 
 const DEFAULT_WEIGHTS: ScoreWeights = {
@@ -215,23 +215,48 @@ export const getScoreGrade = (total: number): { grade: string; color: string; co
 }
 
 export const generatePoemTitle = (phrases: Phrase[], theme?: Theme): string => {
-  if (phrases.length === 0) return '无题'
-  
-  const preferCategories = theme?.titlePattern.preferCategories || ['scene', 'imagery', 'emotion']
-  const connector = theme?.titlePattern.connector || '·'
-  const maxWords = theme?.titlePattern.maxWords || 2
-  const template = theme?.titlePattern.template
-  
-  const keyPhrases = phrases
-    .filter(p => preferCategories.includes(p.category))
-    .slice(0, maxWords)
-  
-  if (keyPhrases.length === 0) {
-    return phrases[0].text
+  const options = generatePoemTitleOptions(phrases, theme)
+  return options.length > 0 ? options[0].title : '无题'
+}
+
+const STRATEGY_LABELS: Record<TitleStrategyType, string> = {
+  theme_match: '主题命中',
+  core_imagery: '核心意象',
+  composition_structure: '作品结构',
+  emotional_core: '情感核心',
+  classical_style: '古典雅致'
+}
+
+const STRATEGY_DESCRIPTIONS: Record<TitleStrategyType, string> = {
+  theme_match: '紧扣章节主题，选用高契合度关键词',
+  core_imagery: '提取最具画面感的核心意象词汇',
+  composition_structure: '依据词类分布，构建对仗结构',
+  emotional_core: '以情感为魂，配景物烘托',
+  classical_style: '遵循古典题名范式，雅致凝练'
+}
+
+const getThemeKeywords = (theme?: Theme): string[] => {
+  if (theme && theme.wordPool.keywords.length > 0) {
+    return theme.wordPool.keywords
   }
-  
-  const words = keyPhrases.map(p => p.text)
-  
+  return []
+}
+
+const sortByRarity = (phrases: Phrase[]): Phrase[] => {
+  const rarityOrder: Record<PhraseRarity, number> = {
+    legendary: 4,
+    epic: 3,
+    rare: 2,
+    common: 1
+  }
+  return [...phrases].sort((a, b) => (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0))
+}
+
+const pickFromCategories = (phrases: Phrase[], categories: PhraseCategory[], max: number): Phrase[] => {
+  return phrases.filter(p => categories.includes(p.category)).slice(0, max)
+}
+
+const applyTemplate = (words: string[], template?: string, connector: string = '·'): string => {
   if (template && words.length >= 2) {
     let result = template
     words.forEach((word, index) => {
@@ -239,8 +264,251 @@ export const generatePoemTitle = (phrases: Phrase[], theme?: Theme): string => {
     })
     return result
   }
-  
   return words.join(connector)
+}
+
+const dedupeTitles = (options: TitleOption[]): TitleOption[] => {
+  const seen = new Set<string>()
+  return options.filter(opt => {
+    if (seen.has(opt.title)) return false
+    seen.add(opt.title)
+    return true
+  })
+}
+
+const generateThemeMatchTitle = (phrases: Phrase[], theme?: Theme): TitleOption | null => {
+  if (phrases.length === 0) return null
+
+  const keywords = getThemeKeywords(theme)
+  const connector = theme?.titlePattern.connector || '·'
+  const template = theme?.titlePattern.template
+  const maxWords = theme?.titlePattern.maxWords || 2
+
+  let matchedPhrases: Phrase[] = []
+  if (keywords.length > 0) {
+    matchedPhrases = sortByRarity(phrases.filter(p => keywords.includes(p.text)))
+  }
+  if (matchedPhrases.length < maxWords) {
+    const preferCategories = theme?.titlePattern.preferCategories || ['scene', 'imagery', 'emotion']
+    const remaining = pickFromCategories(
+      phrases.filter(p => !matchedPhrases.find(m => m.id === p.id)),
+      preferCategories,
+      maxWords - matchedPhrases.length
+    )
+    matchedPhrases = [...matchedPhrases, ...remaining]
+  }
+
+  if (matchedPhrases.length === 0) {
+    matchedPhrases = [phrases[0]]
+  }
+
+  const words = matchedPhrases.slice(0, maxWords).map(p => p.text)
+  const title = applyTemplate(words, template, connector)
+
+  const matchScore = keywords.length > 0
+    ? Math.round((matchedPhrases.filter(p => keywords.includes(p.text)).length / Math.min(maxWords, phrases.length)) * 100)
+    : 70
+
+  return {
+    title,
+    strategy: 'theme_match',
+    strategyLabel: STRATEGY_LABELS.theme_match,
+    description: STRATEGY_DESCRIPTIONS.theme_match,
+    keywords: words,
+    score: Math.min(matchScore + (matchedPhrases.length >= maxWords ? 10 : 0), 100)
+  }
+}
+
+const generateCoreImageryTitle = (phrases: Phrase[], theme?: Theme): TitleOption | null => {
+  if (phrases.length === 0) return null
+
+  const connector = theme?.titlePattern.connector || '·'
+  const imageryPhrases = sortByRarity(phrases.filter(p => p.category === 'imagery' || p.category === 'scene'))
+
+  if (imageryPhrases.length === 0) return null
+
+  const maxWords = 2
+  const selected = imageryPhrases.slice(0, maxWords)
+  const words = selected.map(p => p.text)
+  const title = words.join(connector)
+
+  const imageryScore = Math.round((selected.length / maxWords) * 80) + (selected.some(p => p.rarity === 'epic' || p.rarity === 'legendary') ? 20 : 10)
+
+  return {
+    title,
+    strategy: 'core_imagery',
+    strategyLabel: STRATEGY_LABELS.core_imagery,
+    description: STRATEGY_DESCRIPTIONS.core_imagery,
+    keywords: words,
+    score: Math.min(imageryScore, 100)
+  }
+}
+
+const generateCompositionStructureTitle = (phrases: Phrase[], theme?: Theme): TitleOption | null => {
+  if (phrases.length === 0) return null
+
+  const connector = theme?.titlePattern.connector || '·'
+  const scenePhrases = phrases.filter(p => p.category === 'scene')
+  const emotionPhrases = phrases.filter(p => p.category === 'emotion')
+  const actionPhrases = phrases.filter(p => p.category === 'action')
+  const timePhrases = phrases.filter(p => p.category === 'time')
+
+  let words: string[] = []
+
+  if (scenePhrases.length > 0 && emotionPhrases.length > 0) {
+    words = [scenePhrases[0].text, emotionPhrases[0].text]
+  } else if (timePhrases.length > 0 && scenePhrases.length > 0) {
+    words = [timePhrases[0].text, scenePhrases[0].text]
+  } else if (scenePhrases.length >= 2) {
+    words = sortByRarity(scenePhrases).slice(0, 2).map(p => p.text)
+  } else if (actionPhrases.length > 0 && scenePhrases.length > 0) {
+    words = [scenePhrases[0].text, actionPhrases[0].text]
+  } else if (emotionPhrases.length >= 2) {
+    words = sortByRarity(emotionPhrases).slice(0, 2).map(p => p.text)
+  } else {
+    return null
+  }
+
+  const title = words.join(connector)
+  const categoriesUsed = new Set(words.map((_, i) => i === 0 ? 'scene' : 'emotion')).size
+  const structureScore = 70 + categoriesUsed * 10 + (words.length >= 2 ? 10 : 0)
+
+  return {
+    title,
+    strategy: 'composition_structure',
+    strategyLabel: STRATEGY_LABELS.composition_structure,
+    description: STRATEGY_DESCRIPTIONS.composition_structure,
+    keywords: words,
+    score: Math.min(structureScore, 100)
+  }
+}
+
+const generateEmotionalCoreTitle = (phrases: Phrase[], theme?: Theme): TitleOption | null => {
+  if (phrases.length === 0) return null
+
+  const connector = theme?.titlePattern.connector || '·'
+  const emotionPhrases = sortByRarity(phrases.filter(p => p.category === 'emotion'))
+  const scenePhrases = phrases.filter(p => p.category === 'scene')
+  const imageryPhrases = phrases.filter(p => p.category === 'imagery')
+
+  if (emotionPhrases.length === 0) return null
+
+  const words: string[] = []
+  const supporting = [...scenePhrases, ...imageryPhrases]
+
+  words.push(emotionPhrases[0].text)
+  if (supporting.length > 0) {
+    words.push(sortByRarity(supporting)[0].text)
+  }
+
+  if (words.length < 2) return null
+
+  const title = words.join(connector)
+  const emotionScore = emotionPhrases.length > 0 ? 60 : 40
+  const hasSupport = supporting.length > 0 ? 25 : 0
+  const rareBonus = (emotionPhrases[0].rarity === 'epic' || emotionPhrases[0].rarity === 'legendary') ? 15 : 5
+
+  return {
+    title,
+    strategy: 'emotional_core',
+    strategyLabel: STRATEGY_LABELS.emotional_core,
+    description: STRATEGY_DESCRIPTIONS.emotional_core,
+    keywords: words,
+    score: Math.min(emotionScore + hasSupport + rareBonus, 100)
+  }
+}
+
+const CLASSICAL_PATTERNS = [
+  { prefix: '忆', suffix: '', requireWords: 1 },
+  { prefix: '咏', suffix: '', requireWords: 1 },
+  { prefix: '怀', suffix: '', requireWords: 1 },
+  { prefix: '', suffix: '吟', requireWords: 1 },
+  { prefix: '', suffix: '赋', requireWords: 1 },
+  { prefix: '题', suffix: '', requireWords: 1 },
+  { prefix: '', suffix: '引', requireWords: 1 }
+]
+
+const generateClassicalStyleTitle = (phrases: Phrase[], theme?: Theme): TitleOption | null => {
+  if (phrases.length === 0) return null
+
+  const preferCategories = theme?.titlePattern.preferCategories || ['scene', 'imagery', 'emotion']
+  const coreWords = pickFromCategories(sortByRarity(phrases), preferCategories, 2)
+
+  if (coreWords.length === 0) return null
+
+  const candidates: string[] = []
+  const mainWord = coreWords[0].text
+
+  for (const pattern of CLASSICAL_PATTERNS) {
+    if (mainWord.length <= 3) {
+      const candidate = `${pattern.prefix}${mainWord}${pattern.suffix}`
+      candidates.push(candidate)
+    }
+  }
+
+  if (coreWords.length >= 2) {
+    candidates.push(`${mainWord}·${coreWords[1].text}`)
+    candidates.push(`${coreWords[1].text}${mainWord}`)
+  }
+
+  candidates.push(mainWord)
+
+  const uniqueCandidates = [...new Set(candidates)]
+  const title = uniqueCandidates[Math.floor(Math.random() * uniqueCandidates.length)]
+
+  const classicalScore = (mainWord.length <= 3 ? 50 : 30) +
+    (coreWords.some(p => p.rarity === 'rare' || p.rarity === 'epic' || p.rarity === 'legendary') ? 30 : 15) +
+    (coreWords.length >= 2 ? 20 : 10)
+
+  return {
+    title,
+    strategy: 'classical_style',
+    strategyLabel: STRATEGY_LABELS.classical_style,
+    description: STRATEGY_DESCRIPTIONS.classical_style,
+    keywords: coreWords.map(p => p.text),
+    score: Math.min(classicalScore, 100)
+  }
+}
+
+export const generatePoemTitleOptions = (phrases: Phrase[], theme?: Theme): TitleOption[] => {
+  if (phrases.length === 0) {
+    return [{
+      title: '无题',
+      strategy: 'classical_style',
+      strategyLabel: STRATEGY_LABELS.classical_style,
+      description: '画布为空，题名无题',
+      keywords: [],
+      score: 50
+    }]
+  }
+
+  const generators = [
+    generateThemeMatchTitle,
+    generateCoreImageryTitle,
+    generateCompositionStructureTitle,
+    generateEmotionalCoreTitle,
+    generateClassicalStyleTitle
+  ]
+
+  const results: TitleOption[] = []
+  for (const gen of generators) {
+    const result = gen(phrases, theme)
+    if (result && result.title.trim().length > 0) {
+      results.push(result)
+    }
+  }
+
+  const deduped = dedupeTitles(results)
+  const sorted = deduped.sort((a, b) => b.score - a.score)
+
+  return sorted.length > 0 ? sorted : [{
+    title: phrases[0].text,
+    strategy: 'core_imagery',
+    strategyLabel: STRATEGY_LABELS.core_imagery,
+    description: '取首词为题',
+    keywords: [phrases[0].text],
+    score: 50
+  }]
 }
 
 const DIMENSION_LABELS: Record<string, string> = {
