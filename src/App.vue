@@ -4,7 +4,8 @@ import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Com
 import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
-import { calculateScore, generatePoemTitle, generatePoemTitleOptions } from '@/utils/scoring'
+import { calculateScore, generatePoemTitle, generatePoemTitleOptions, generatePhasedGuidance } from '@/utils/scoring'
+import type { PhasedGuidance } from '@/types'
 import { getThemeById, getDefaultTheme } from '@/data/themes'
 import { loadThemeState, getCurrentThemeId, setCurrentTheme, getCustomThemes } from '@/utils/storage'
 import {
@@ -360,55 +361,46 @@ const currentChapter = computed((): Chapter | null => {
 
 const placedPhraseIds = computed(() => new Set(boardPhrases.value.map(p => p.id)))
 
+const phrasesForScoring = computed((): Phrase[] => {
+  return boardPhrases.value.map(p => ({
+    id: p.id,
+    text: p.text,
+    category: p.category,
+    position: p.position,
+    rotation: p.rotation,
+    isPlaced: p.isPlaced,
+    weight: p.weight,
+    rarity: p.rarity,
+    source: p.source
+  }))
+})
+
 const score = computed<ScoreBreakdown>((): ScoreBreakdown => {
   if (!currentChapter.value) {
     return { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 }
   }
-  const phrases = boardPhrases.value.map(p => ({
-    id: p.id,
-    text: p.text,
-    category: p.category,
-    position: p.position,
-    rotation: p.rotation,
-    isPlaced: p.isPlaced,
-    weight: p.weight,
-    rarity: p.rarity,
-    source: p.source
-  }))
   const theme = isFreeRealm.value ? currentTheme.value : undefined
-  return calculateScore(phrases, currentChapter.value, questState.value.activeWeightBoosts, theme)
+  return calculateScore(phrasesForScoring.value, currentChapter.value, questState.value.activeWeightBoosts, theme)
+})
+
+const phasedGuidance = computed<PhasedGuidance | null>(() => {
+  if (!currentChapter.value) return null
+  return generatePhasedGuidance(
+    phrasesForScoring.value,
+    currentChapter.value,
+    score.value,
+    currentChapter.value.targetPhraseCount
+  )
 })
 
 const poemTitle = computed(() => {
-  const phrases = boardPhrases.value.map(p => ({
-    id: p.id,
-    text: p.text,
-    category: p.category,
-    position: p.position,
-    rotation: p.rotation,
-    isPlaced: p.isPlaced,
-    weight: p.weight,
-    rarity: p.rarity,
-    source: p.source
-  }))
   const theme = isFreeRealm.value ? currentTheme.value : undefined
-  return generatePoemTitle(phrases, theme, currentChapter.value || undefined)
+  return generatePoemTitle(phrasesForScoring.value, theme, currentChapter.value || undefined)
 })
 
 const poemTitleOptions = computed((): TitleOption[] => {
-  const phrases = boardPhrases.value.map(p => ({
-    id: p.id,
-    text: p.text,
-    category: p.category,
-    position: p.position,
-    rotation: p.rotation,
-    isPlaced: p.isPlaced,
-    weight: p.weight,
-    rarity: p.rarity,
-    source: p.source
-  }))
   const theme = isFreeRealm.value ? currentTheme.value : undefined
-  return generatePoemTitleOptions(phrases, theme, currentChapter.value || undefined)
+  return generatePoemTitleOptions(phrasesForScoring.value, theme, currentChapter.value || undefined)
 })
 
 const unlockedChapterIds = computed(() => {
@@ -1131,10 +1123,59 @@ watch(currentChapterId, (newId) => {
     
     <main class="main-content">
       <div class="left-panel">
-        <div v-if="currentChapter" class="chapter-info">
-          <div class="chapter-hint">
-            <span class="hint-icon">✦</span>
-            <span class="hint-text">{{ currentChapter.hint }}</span>
+        <div v-if="phasedGuidance" class="chapter-info" :class="`tone-${phasedGuidance.accentTone}`">
+          <div class="phased-guidance">
+            <div class="guidance-header">
+              <div class="guidance-stage">
+                <span class="stage-icon" :class="`icon-${phasedGuidance.countPhase}`">{{ phasedGuidance.stageIcon }}</span>
+                <span class="stage-label">{{ phasedGuidance.stageLabel }}</span>
+              </div>
+              <div class="guidance-progress-mini">
+                <span class="progress-count">{{ phasedGuidance.progress.current }}/{{ phasedGuidance.progress.target }}</span>
+                <div class="mini-progress-track">
+                  <div 
+                    class="mini-progress-fill"
+                    :style="{ width: Math.min(phasedGuidance.progress.percentage, 100) + '%' }"
+                  ></div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="guidance-headline">
+              {{ phasedGuidance.headline }}
+            </div>
+            
+            <div class="guidance-suggestions">
+              <div class="suggestion-primary">
+                <span class="suggestion-arrow">❯</span>
+                <span class="suggestion-text">{{ phasedGuidance.primarySuggestion }}</span>
+              </div>
+              <transition name="expand">
+                <div v-if="phasedGuidance.secondarySuggestion" class="suggestion-secondary">
+                  <span class="suggestion-dot">·</span>
+                  <span class="suggestion-text">{{ phasedGuidance.secondarySuggestion }}</span>
+                </div>
+              </transition>
+            </div>
+            
+            <div v-if="phasedGuidance.progress.current > 0" class="guidance-categories">
+              <div 
+                v-for="insight in phasedGuidance.categoryInsights.filter(i => i.count > 0)"
+                :key="insight.category"
+                class="category-chip"
+                :class="`status-${insight.status}`"
+                :title="`${insight.label} ${insight.count}个，占${Math.round(insight.percentage * 100)}%`"
+              >
+                <span class="chip-label">{{ insight.label }}</span>
+                <span class="chip-count">{{ insight.count }}</span>
+              </div>
+            </div>
+            
+            <div v-if="phasedGuidance.encouragement && phasedGuidance.progress.current > 0" class="guidance-encouragement">
+              <span class="enc-quote">「</span>
+              <span class="enc-text">{{ phasedGuidance.encouragement }}</span>
+              <span class="enc-quote">」</span>
+            </div>
           </div>
         </div>
         
@@ -1158,17 +1199,7 @@ watch(currentChapterId, (newId) => {
             :phrasesCount="boardPhrases.length"
             :targetCount="currentChapter?.targetPhraseCount || 5"
             :weightBoosts="questState.activeWeightBoosts"
-            :phrases="boardPhrases.map(p => ({
-              id: p.id,
-              text: p.text,
-              category: p.category,
-              position: p.position,
-              rotation: p.rotation,
-              isPlaced: p.isPlaced,
-              weight: p.weight,
-              rarity: p.rarity,
-              source: p.source
-            }))"
+            :phrases="phrasesForScoring"
             :chapter="currentChapter"
           />
         </div>
@@ -1373,28 +1404,294 @@ watch(currentChapterId, (newId) => {
 
 .chapter-info {
   flex-shrink: 0;
+  transition: all 0.4s ease;
 }
 
-.chapter-hint {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
+.chapter-info.tone-cold {
+  --tone-color: #5b7a8c;
+  --tone-bg: rgba(91, 122, 140, 0.08);
+  --tone-border: rgba(91, 122, 140, 0.25);
+}
+
+.chapter-info.tone-warm {
+  --tone-color: #c9956c;
+  --tone-bg: rgba(201, 149, 108, 0.08);
+  --tone-border: rgba(201, 149, 108, 0.25);
+}
+
+.chapter-info.tone-jade {
+  --tone-color: #6b8e6b;
+  --tone-bg: rgba(107, 142, 107, 0.08);
+  --tone-border: rgba(107, 142, 107, 0.25);
+}
+
+.chapter-info.tone-violet {
+  --tone-color: #a87ac9;
+  --tone-bg: rgba(168, 122, 201, 0.08);
+  --tone-border: rgba(168, 122, 201, 0.25);
+}
+
+.chapter-info.tone-gold {
+  --tone-color: #c9a86c;
+  --tone-bg: rgba(201, 168, 108, 0.1);
+  --tone-border: rgba(201, 168, 108, 0.35);
+}
+
+.phased-guidance {
+  padding: 14px 16px;
   background: var(--bg-card);
   backdrop-filter: blur(10px);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 1px solid var(--tone-border, var(--border));
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.4s ease;
+  position: relative;
+  overflow: hidden;
 }
 
-.hint-icon {
-  color: var(--accent-gold);
+.phased-guidance::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--tone-bg, transparent) 0%, transparent 60%);
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.phased-guidance > * {
+  position: relative;
+}
+
+.guidance-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.guidance-stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stage-icon {
   font-size: 14px;
+  color: var(--tone-color, var(--accent-gold));
+  transition: transform 0.3s ease;
 }
 
-.hint-text {
-  font-size: 13px;
+.stage-icon.icon-early {
+  animation: pulse-soft 3s ease-in-out infinite;
+}
+
+.stage-icon.icon-building {
+  animation: pulse-soft 2.5s ease-in-out infinite;
+}
+
+.stage-icon.icon-sufficient {
+  animation: glow 2s ease-in-out infinite;
+}
+
+.stage-icon.icon-exceed {
+  animation: spin-slow 4s linear infinite;
+}
+
+.stage-label {
+  font-size: 11px;
+  color: var(--tone-color, var(--text-muted));
+  font-family: var(--font-serif);
+  letter-spacing: 2px;
+  font-weight: 500;
+}
+
+.guidance-progress-mini {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 100px;
+}
+
+.progress-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.mini-progress-track {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mini-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--tone-color, var(--accent-gold)), var(--tone-color, var(--accent-gold)));
+  border-radius: 2px;
+  transition: width 0.5s ease;
+  opacity: 0.8;
+}
+
+.guidance-headline {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--text-primary);
+  font-weight: 500;
+  letter-spacing: 1px;
+  line-height: 1.5;
+}
+
+.guidance-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.suggestion-primary,
+.suggestion-secondary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.suggestion-arrow {
+  color: var(--tone-color, var(--accent-gold));
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.suggestion-dot {
+  color: var(--text-muted);
+  font-size: 16px;
+  flex-shrink: 0;
+  line-height: 0.8;
+  margin-left: 2px;
+}
+
+.suggestion-primary .suggestion-text {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  font-family: var(--font-serif);
+}
+
+.suggestion-secondary .suggestion-text {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  font-family: var(--font-serif);
+}
+
+.guidance-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-size: 10.5px;
+  font-family: var(--font-serif);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.2s ease;
+}
+
+.category-chip.status-balanced {
+  background: rgba(107, 142, 107, 0.1);
+  border-color: rgba(107, 142, 107, 0.25);
+  color: #8ab88a;
+}
+
+.category-chip.status-excess {
+  background: rgba(201, 101, 101, 0.1);
+  border-color: rgba(201, 101, 101, 0.25);
+  color: #e89090;
+}
+
+.category-chip.status-deficit {
+  background: rgba(201, 168, 108, 0.1);
+  border-color: rgba(201, 168, 108, 0.25);
+  color: var(--accent-gold);
+}
+
+.category-chip:not([class*="status-"]) {
+  color: var(--text-secondary);
+}
+
+.chip-label {
+  font-weight: 500;
+}
+
+.chip-count {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.guidance-encouragement {
+  text-align: center;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 2px;
+  padding: 8px 4px 0;
+}
+
+.enc-quote {
+  color: var(--tone-color, var(--accent-gold));
+  font-family: var(--font-brush);
+  font-size: 14px;
+  margin: 0 2px;
+  opacity: 0.8;
+}
+
+.enc-text {
+  font-size: 11.5px;
   color: var(--text-secondary);
   font-family: var(--font-serif);
+  letter-spacing: 0.5px;
+  line-height: 1.7;
+  opacity: 0.9;
+}
+
+.expand-enter-active,
+.expand-leave-active {
+  transition: all 0.3s ease;
+  overflow: hidden;
+  opacity: 1;
+}
+
+.expand-enter-from,
+.expand-leave-to {
+  opacity: 0;
+  max-height: 0;
+  transform: translateY(-4px);
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+@keyframes glow {
+  0%, 100% { filter: drop-shadow(0 0 2px var(--tone-color, var(--accent-gold))); }
+  50% { filter: drop-shadow(0 0 6px var(--tone-color, var(--accent-gold))); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .board-wrapper {

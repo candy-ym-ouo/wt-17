@@ -1,4 +1,4 @@
-import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme, TitleOption, TitleStrategyType } from '@/types'
+import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme, TitleOption, TitleStrategyType, PhasedGuidance, CountPhase, ScorePhase, CategoryPhase, CategoryInsight } from '@/types'
 import { rarityScoreBonus } from '@/data/phrases'
 
 const DEFAULT_WEIGHTS: ScoreWeights = {
@@ -986,5 +986,336 @@ export const generateDiagnosticReport = (
     wordClassImbalance,
     revisionPath,
     overallSuggestion
+  }
+}
+
+const CATEGORY_LABELS_GUIDANCE: Record<PhraseCategory, string> = {
+  scene: '景物',
+  emotion: '情感',
+  time: '时间',
+  action: '动作',
+  imagery: '意象'
+}
+
+const CHAPTER_THEME_VOCAB: Record<string, {
+  openers: string[]
+  scene_words: string[]
+  emotion_words: string[]
+  milestones: string[]
+}> = {
+  '春夜': {
+    openers: ['铺开春夜的词笺', '点亮春江的明月', '唤醒花月的幽思'],
+    scene_words: ['明月', '落花', '垂柳'],
+    emotion_words: ['相思', '缱绻', '清欢'],
+    milestones: ['初遇春月', '花影渐浓', '月夜未央', '诗意盎然', '春宵圆满']
+  },
+  '秋思': {
+    openers: ['踏上秋日的古道', '扬起西风的征帆', '晕开残阳的暮色'],
+    scene_words: ['青山', '残阳', '古道'],
+    emotion_words: ['离愁', '寂寥', '惆怅'],
+    milestones: ['初入秋山', '暮色渐沉', '羁愁暗生', '秋思绵长', '古道斜阳']
+  },
+  '归乡': {
+    openers: ['点亮归乡的灯火', '推开故园的柴门', '掸落旅途的风雪'],
+    scene_words: ['初雪', '繁星', '青灯'],
+    emotion_words: ['相思', '缱绻'],
+    milestones: ['雪夜初程', '灯火在望', '故园渐近', '归心似箭', '温酒重逢']
+  },
+  '江湖': {
+    openers: ['撑开夜雨的油纸伞', '拂去江湖的尘霜', '弹响锦瑟的旧弦'],
+    scene_words: ['夜雨', '长河', '古寺'],
+    emotion_words: ['淡泊', '怅惘'],
+    milestones: ['初入江湖', '夜雨初霁', '琴剑相伴', '十年灯火', '笑傲江湖']
+  },
+  '自由': {
+    openers: ['铺开无垠的宣纸', '放飞无拘的思绪', '开启自由的诗篇'],
+    scene_words: ['星辰', '云海'],
+    emotion_words: ['清欢', '无我'],
+    milestones: ['鸿蒙初辟', '气象初成', '纵横捭阖', '妙造自然', '天人合一']
+  }
+}
+
+const getThemeVocab = (theme: string) => {
+  return CHAPTER_THEME_VOCAB[theme] || CHAPTER_THEME_VOCAB['春夜']
+}
+
+const determineCountPhase = (current: number, target: number): CountPhase => {
+  if (current === 0) return 'empty'
+  const ratio = current / target
+  if (ratio < 0.4) return 'early'
+  if (ratio < 0.8) return 'building'
+  if (ratio <= 1.2) return 'sufficient'
+  return 'exceed'
+}
+
+const determineScorePhase = (total: number): ScorePhase => {
+  if (total === 0) return 'unstarted'
+  if (total < 25) return 'nascent'
+  if (total < 50) return 'forming'
+  if (total < 70) return 'refining'
+  if (total < 90) return 'polishing'
+  return 'masterpiece'
+}
+
+const determineCategoryPhase = (
+  phrases: Phrase[],
+  insights: CategoryInsight[]
+): CategoryPhase => {
+  if (phrases.length < 2) return 'mono'
+  const usedCategories = new Set(phrases.map(p => p.category))
+  const activeCount = usedCategories.size
+  if (activeCount <= 1) return 'mono'
+  if (activeCount === 2) return 'dual'
+  
+  const hasExcess = insights.some(i => i.status === 'excess')
+  const hasDeficit = insights.some(i => i.status === 'deficit')
+  if (activeCount >= 4 && !hasExcess && !hasDeficit) return 'balanced'
+  if (activeCount >= 3) return 'varied'
+  return 'dual'
+}
+
+const buildCategoryInsights = (phrases: Phrase[]): CategoryInsight[] => {
+  const allCategories: PhraseCategory[] = ['scene', 'emotion', 'time', 'action', 'imagery']
+  const total = phrases.length || 1
+  
+  return allCategories.map(cat => {
+    const count = phrases.filter(p => p.category === cat).length
+    const percentage = count / total
+    const ideal = IDEAL_CATEGORY_PERCENTAGES[cat]
+    let status: CategoryInsight['status'] = 'none'
+    
+    if (count > 0) {
+      if (percentage > ideal * 1.6 && count >= 2) {
+        status = 'excess'
+      } else if (percentage < ideal * 0.4 && phrases.length >= 4) {
+        status = 'deficit'
+      } else {
+        status = 'balanced'
+      }
+    }
+    
+    return {
+      category: cat,
+      label: CATEGORY_LABELS_GUIDANCE[cat],
+      count,
+      percentage,
+      idealPercentage: ideal,
+      status
+    }
+  })
+}
+
+const generateCountSuggestion = (
+  phase: CountPhase,
+  current: number,
+  target: number,
+  themeVocab: ReturnType<typeof getThemeVocab>
+): string => {
+  const diff = target - current
+  switch (phase) {
+    case 'empty':
+      return `先从「${themeVocab.scene_words[0]}」「${themeVocab.emotion_words[0]}」入手，选起首词句`
+    case 'early':
+      return `再添 ${diff} 个词，不妨引入${themeVocab.scene_words.slice(1, 3).join('、')}等景致`
+    case 'building':
+      return `接近目标 ${target}，差 ${diff} 词，可补时间或动作类词汇`
+    case 'sufficient':
+      return current < target
+        ? `差 ${diff} 词即可达标，斟酌是否精益求精`
+        : current > target
+          ? `已超目标 ${current - target} 词，可筛选精简，去芜存菁`
+          : `已达目标 ${target} 词，数量合宜`
+    case 'exceed':
+      return `超出 ${current - target} 词，建议删选，留取最富意境者`
+  }
+}
+
+const generateCategorySuggestion = (
+  phase: CategoryPhase,
+  insights: CategoryInsight[],
+  themeVocab: ReturnType<typeof getThemeVocab>
+): string | undefined => {
+  const missing = insights.filter(i => i.status === 'deficit' || (i.count === 0 && i.category !== 'action'))
+  const excess = insights.filter(i => i.status === 'excess')
+  
+  if (phase === 'mono') {
+    const used = insights.find(i => i.count > 0)
+    if (!used) return undefined
+    if (used.category === 'scene') return '仅有景致，缺少情感注入，可加情感或时间类词汇'
+    if (used.category === 'emotion') return '唯有情思，缺乏景物依托，试添景物以承载情感'
+    return '词类尚单一，可跨类搭配，如景与情、时与动'
+  }
+  
+  if (phase === 'dual') {
+    return '词类仅两类，层次单薄，可引入时间或意象类丰富层次'
+  }
+  
+  if (excess.length > 0) {
+    const excessLabels = excess.map(e => e.label).join('、')
+    return `${excessLabels}偏多，可适度削减`
+  }
+  
+  if (missing.length > 0) {
+    const missingLabels = missing.slice(0, 2).map(m => m.label).join('、')
+    return `${missingLabels}不足，建议补充`
+  }
+  
+  if (phase === 'balanced') {
+    return '词类分布均衡，五大类皆备，结构天成'
+  }
+  
+  return '词类多样，结构初具，可微调以求完美'
+}
+
+const generateScoreSuggestion = (
+  phase: ScorePhase,
+  score: ScoreBreakdown,
+  theme: string
+): string | undefined => {
+  switch (phase) {
+    case 'unstarted':
+      return undefined
+    case 'nascent':
+      return '诗意初生，先求数量齐备，再谋质量精进'
+    case 'forming':
+      return '骨架初成，可留意关键词的融入与长短词的节奏'
+    case 'refining': {
+      const dimensions: Array<{ key: keyof ScoreBreakdown; label: string }> = [
+        { key: 'coherence', label: '连贯性' },
+        { key: 'imagery', label: '意象' },
+        { key: 'rhythm', label: '韵律' },
+        { key: 'themeMatch', label: '契合' }
+      ]
+      const weakest = dimensions
+        .filter(d => d.key !== 'total')
+        .sort((a, b) => (score[a.key] as number) - (score[b.key] as number))[0]
+      return `${weakest.label}最待提升，可据此方向精修`
+    }
+    case 'polishing':
+      return '已入佳境，细品词句间的呼应，推敲以求更上层楼'
+    case 'masterpiece':
+      return theme === '自由' ? '神来之笔，自由之境已达化境' : '神品可期，或可斟酌画龙点睛之笔'
+  }
+}
+
+const PHASE_LABELS: Record<CountPhase, string[]> = {
+  empty: ['落笔之始', '鸿蒙初开', '词笺新铺'],
+  early: ['遣词之初', '诗意萌生', '初绘丹青'],
+  building: ['铺陈之中', '意象渐丰', '脉络渐显'],
+  sufficient: ['章法初成', '初具气象', '辞藻已备'],
+  exceed: ['洋洋大观', '词满为患', '宜收宜放']
+}
+
+const PHASE_ICONS: Record<CountPhase, string> = {
+  empty: '○',
+  early: '◐',
+  building: '◔',
+  sufficient: '●',
+  exceed: '✦'
+}
+
+const TONE_BY_PHASE: Record<ScorePhase, PhasedGuidance['accentTone']> = {
+  unstarted: 'cold',
+  nascent: 'cold',
+  forming: 'warm',
+  refining: 'jade',
+  polishing: 'violet',
+  masterpiece: 'gold'
+}
+
+export const generatePhasedGuidance = (
+  phrases: Phrase[],
+  chapter: Chapter,
+  score: ScoreBreakdown,
+  targetCount: number
+): PhasedGuidance => {
+  const current = phrases.length
+  const themeVocab = getThemeVocab(chapter.theme)
+  
+  const countPhase = determineCountPhase(current, targetCount)
+  const scorePhase = determineScorePhase(score.total)
+  const categoryInsights = buildCategoryInsights(phrases)
+  const categoryPhase = determineCategoryPhase(phrases, categoryInsights)
+  
+  const progressPct = Math.min(current / targetCount * 100, 120)
+  
+  const countSuggestion = generateCountSuggestion(countPhase, current, targetCount, themeVocab)
+  const categorySuggestion = generateCategorySuggestion(categoryPhase, categoryInsights, themeVocab)
+  const scoreSuggestion = generateScoreSuggestion(scorePhase, score, chapter.theme)
+  
+  const opener = themeVocab.openers[Math.floor(Math.random() * themeVocab.openers.length)]
+  const milestoneIndex = Math.min(
+    Math.floor((current / Math.max(targetCount, 1)) * themeVocab.milestones.length),
+    themeVocab.milestones.length - 1
+  )
+  
+  let headline: string
+  let primarySuggestion: string
+  let encouragement: string
+  
+  if (countPhase === 'empty') {
+    headline = chapter.theme === '自由' ? '自由之境，随心落笔' : `${opener}，且待诗意流淌`
+    primarySuggestion = countSuggestion
+    encouragement = chapter.hint
+  } else if (scorePhase === 'masterpiece') {
+    headline = '神品将成，诗意盎然'
+    primarySuggestion = scoreSuggestion || '品读全篇，或可直接定稿'
+    encouragement = '此曲只应天上有，人间能得几回闻。'
+  } else if (countPhase === 'exceed') {
+    headline = '词已过盈，宜思取舍'
+    primarySuggestion = countSuggestion
+    encouragement = '损有余而补不足，精简亦为诗道。'
+  } else if (categoryPhase === 'mono' && current >= 2) {
+    headline = `${themeVocab.milestones[milestoneIndex]}，层次待丰`
+    primarySuggestion = categorySuggestion || countSuggestion
+    encouragement = '声色香味触法，缺一不可成诗。'
+  } else if (scorePhase === 'polishing') {
+    headline = '佳作在望，精雕细琢'
+    primarySuggestion = scoreSuggestion || categorySuggestion || countSuggestion
+    encouragement = '吟安一个字，捻断数茎须。'
+  } else if (countPhase === 'sufficient' && current >= targetCount) {
+    headline = `${themeVocab.milestones[Math.min(milestoneIndex, themeVocab.milestones.length - 2)]}，章法已备`
+    primarySuggestion = scoreSuggestion || categorySuggestion || '数量已足，可细品词与词的呼应'
+    encouragement = '好诗不厌百回改，推敲之间境界生。'
+  } else {
+    headline = `${themeVocab.milestones[milestoneIndex]}，循序而进`
+    const suggestions = [categorySuggestion, scoreSuggestion, countSuggestion].filter(Boolean) as string[]
+    primarySuggestion = suggestions[0] || countSuggestion
+    encouragement = current < 2
+      ? '千里之行，始于足下。'
+      : current < targetCount / 2
+        ? '不积跬步，无以至千里。'
+        : '靡不有初，鲜克有终。'
+  }
+  
+  const secondarySuggestion = (
+    countPhase !== 'empty' &&
+    scorePhase !== 'unstarted' &&
+    (categorySuggestion && categorySuggestion !== primarySuggestion) || undefined
+  ) ? categorySuggestion : undefined
+  
+  const stageLabels = PHASE_LABELS[countPhase]
+  const stageLabel = stageLabels[milestoneIndex % stageLabels.length]
+  
+  return {
+    countPhase,
+    scorePhase,
+    categoryPhase,
+    progress: {
+      current,
+      target: targetCount,
+      percentage: progressPct
+    },
+    categoryInsights,
+    headline,
+    primarySuggestion,
+    secondarySuggestion,
+    categorySuggestion,
+    scoreSuggestion,
+    countSuggestion,
+    encouragement,
+    stageLabel,
+    stageIcon: PHASE_ICONS[countPhase],
+    accentTone: TONE_BY_PHASE[scorePhase]
   }
 }

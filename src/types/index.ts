@@ -367,3 +367,38 @@ export interface TitleOption {
   keywords: string[]
   score: number
 }
+
+export type CountPhase = 'empty' | 'early' | 'building' | 'sufficient' | 'exceed'
+export type ScorePhase = 'unstarted' | 'nascent' | 'forming' | 'refining' | 'polishing' | 'masterpiece'
+export type CategoryPhase = 'mono' | 'dual' | 'varied' | 'balanced'
+
+export interface CategoryInsight {
+  category: PhraseCategory
+  label: string
+  count: number
+  percentage: number
+  idealPercentage: number
+  status: 'balanced' | 'excess' | 'deficit' | 'none'
+}
+
+export interface PhasedGuidance {
+  countPhase: CountPhase
+  scorePhase: ScorePhase
+  categoryPhase: CategoryPhase
+  progress: {
+    current: number
+    target: number
+    percentage: number
+  }
+  categoryInsights: CategoryInsight[]
+  headline: string
+  primarySuggestion: string
+  secondarySuggestion?: string
+  categorySuggestion?: string
+  scoreSuggestion?: string
+  countSuggestion?: string
+  encouragement: string
+  stageLabel: string
+  stageIcon: string
+  accentTone: 'cold' | 'warm' | 'gold' | 'jade' | 'violet'
+}
