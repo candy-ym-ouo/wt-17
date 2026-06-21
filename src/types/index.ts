@@ -112,6 +112,9 @@ export interface Composition {
   isPinned?: boolean
   pinnedAt?: number
   collectionIds?: string[]
+  creationDuration?: number
+  coreImagery?: string[]
+  editCount?: number
 }
 
 export interface Collection {

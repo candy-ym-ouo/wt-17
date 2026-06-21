@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import type { Composition, Collection, FilterState, GroupBy, SortBy, ScoreGrade, GroupedCompositions } from '@/types'
-import { getScoreGrade } from '@/utils/scoring'
-import { filterCompositions, sortCompositions, groupCompositions, getGrade, getDateGroups, getGradeColor } from '@/utils/portfolioFilter'
+import type { Composition, Collection, FilterState, GroupBy, SortBy, ScoreGrade, GroupedCompositions, Chapter } from '@/types'
+import { getScoreGrade, extractCoreImagery } from '@/utils/scoring'
+import { filterCompositions, sortCompositions, groupCompositions, getGrade, getDateGroups, getGradeColor, formatDuration, getTimeAgo, getChapterProgress, getEditStatus } from '@/utils/portfolioFilter'
 
 interface Props {
   compositions: Composition[]
   collections: Collection[]
   chaptersTitles: Record<string, { title: string; accent: string }>
+  chapters?: Chapter[]
   editingCompositionId: string | null
 }
 
@@ -186,9 +187,36 @@ const cancelEditCollection = () => {
 
 const getCollectionById = (id: string) => props.collections.find(c => c.id === id)
 
+const getChapterById = (chapterId: string): Chapter | undefined => {
+  return props.chapters?.find(ch => ch.id === chapterId)
+}
+
 const getChapterAccent = (chapterId: string) => props.chaptersTitles[chapterId]?.accent || '#c9a86c'
 
 const getChapterTitle = (chapterId: string) => props.chaptersTitles[chapterId]?.title || '自由之境'
+
+const getCompCoreImagery = (comp: Composition): string[] => {
+  if (comp.coreImagery && comp.coreImagery.length > 0) {
+    return comp.coreImagery
+  }
+  return extractCoreImagery(comp.phrases, 3)
+}
+
+const getCompCreationDuration = (comp: Composition): string => {
+  if (comp.creationDuration && comp.creationDuration > 0) {
+    return formatDuration(comp.creationDuration)
+  }
+  return '未知'
+}
+
+const getCompProgress = (comp: Composition) => {
+  const chapter = getChapterById(comp.chapterId)
+  return getChapterProgress(comp, chapter)
+}
+
+const getCompEditStatus = (comp: Composition) => {
+  return getEditStatus(comp)
+}
 
 const getGroupAccent = (group: GroupedCompositions) => {
   if (groupBy.value === 'chapter') {
@@ -374,6 +402,34 @@ const getGroupAccent = (group: GroupedCompositions) => {
                     {{ phrase.text }}
                   </span>
                 </div>
+                <div v-if="getCompCoreImagery(comp).length > 0" class="comp-imagery">
+                  <span class="imagery-label">核心意象</span>
+                  <div class="imagery-tags">
+                    <span 
+                      v-for="(img, idx) in getCompCoreImagery(comp)" 
+                      :key="idx"
+                      class="imagery-tag"
+                      :style="{ color: getChapterAccent(comp.chapterId) }"
+                    >
+                      {{ img }}
+                    </span>
+                  </div>
+                </div>
+                <div class="comp-progress">
+                  <div class="progress-info">
+                    <span class="progress-label">{{ getCompProgress(comp).label }}</span>
+                    <span class="progress-count">{{ getCompProgress(comp).current }}/{{ getCompProgress(comp).target }}</span>
+                  </div>
+                  <div class="progress-bar">
+                    <div 
+                      class="progress-fill"
+                      :style="{ 
+                        width: getCompProgress(comp).percentage + '%',
+                        background: getChapterAccent(comp.chapterId)
+                      }"
+                    ></div>
+                  </div>
+                </div>
                 <div class="comp-footer">
                   <div class="comp-tags">
                     <span class="comp-chapter" :style="{ color: getChapterAccent(comp.chapterId) }">
@@ -388,7 +444,19 @@ const getGroupAccent = (group: GroupedCompositions) => {
                       {{ getCollectionById(collId)?.name }}
                     </span>
                   </div>
-                  <span class="comp-date">{{ formatDate(comp.createdAt) }}</span>
+                  <div class="comp-meta">
+                    <div class="meta-row">
+                      <span class="meta-item" title="创作耗时">
+                        <span class="meta-icon">⏱</span>
+                        <span class="meta-text">{{ getCompCreationDuration(comp) }}</span>
+                      </span>
+                      <span class="meta-item" :title="getCompEditStatus(comp).label">
+                        <span class="meta-icon">{{ getCompEditStatus(comp).icon }}</span>
+                        <span class="meta-text">{{ getTimeAgo(comp.updatedAt) }}</span>
+                      </span>
+                    </div>
+                    <span class="comp-date">{{ formatDate(comp.createdAt) }}</span>
+                  </div>
                 </div>
               </div>
               <div class="comp-actions">
@@ -941,10 +1009,87 @@ const getGroupAccent = (group: GroupedCompositions) => {
   color: var(--text-secondary);
 }
 
-.comp-footer {
+.comp-imagery {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.imagery-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  padding-top: 2px;
+  letter-spacing: 1px;
+}
+
+.imagery-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.imagery-tag {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.imagery-tag::before {
+  content: '·';
+  margin-right: 4px;
+  opacity: 0.6;
+}
+
+.comp-progress {
+  margin-bottom: 12px;
+}
+
+.progress-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 4px;
+}
+
+.progress-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.progress-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  opacity: 0.8;
+}
+
+.comp-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .comp-tags {
@@ -965,9 +1110,40 @@ const getGroupAccent = (group: GroupedCompositions) => {
   font-size: 10px;
 }
 
-.comp-date {
+.comp-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.meta-row {
+  display: flex;
+  gap: 10px;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.meta-icon {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.meta-text {
+  font-size: 11px;
+}
+
+.comp-date {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .comp-actions {

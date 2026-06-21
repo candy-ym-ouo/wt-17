@@ -4,7 +4,7 @@ import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Com
 import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
-import { calculateScore, generatePoemTitle, generatePoemTitleOptions, generatePhasedGuidance } from '@/utils/scoring'
+import { calculateScore, generatePoemTitle, generatePoemTitleOptions, generatePhasedGuidance, extractCoreImagery } from '@/utils/scoring'
 import type { PhasedGuidance } from '@/types'
 import { getThemeById, getDefaultTheme } from '@/data/themes'
 import { loadThemeState, getCurrentThemeId, setCurrentTheme, getCustomThemes } from '@/utils/storage'
@@ -88,6 +88,7 @@ const questState = ref<QuestState>(loadQuestState())
 
 const snapshotStorage = ref(loadSnapshots())
 const editingComposition = ref<EditingCompositionState>(loadEditingComposition())
+const compositionStartTime = ref<number | null>(null)
 
 const chapterDropCache = ref<Record<string, Phrase[]>>({})
 
@@ -136,6 +137,7 @@ const restoreDraft = (draft: DraftState) => {
   historyManager.reset()
   pushToHistory()
   snapshotStorage.value = setCurrentSnapshot(null)
+  compositionStartTime.value = Date.now()
   
   clearDraft()
   showDraftRestoreDialog.value = false
@@ -570,6 +572,7 @@ const handleSelectChapter = (chapterId: string) => {
   pushToHistory()
   snapshotStorage.value = setCurrentSnapshot(null)
   clearEditingState()
+  compositionStartTime.value = null
   showChapters.value = false
   justUnlockedChapter.value = null
   lastMilestoneLevel.value = 'none'
@@ -593,6 +596,7 @@ const handleReset = () => {
   boardPhrases.value = []
   snapshotStorage.value = setCurrentSnapshot(null)
   clearEditingState()
+  compositionStartTime.value = null
   pushToHistory()
 }
 
@@ -622,10 +626,19 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
   const now = Date.now()
   const isEditing = isEditingComposition.value && !asNewCopy
   const existingCompId = editingComposition.value.compositionId
+  const coreImagery = extractCoreImagery(phrases, 4)
+  
+  let sessionDuration = 0
+  if (compositionStartTime.value) {
+    sessionDuration = now - compositionStartTime.value
+  }
 
   let composition: Composition
   if (isEditing && existingCompId) {
     const existing = compositions.value.find(c => c.id === existingCompId)
+    const previousDuration = existing?.creationDuration || 0
+    const newEditCount = (existing?.editCount || 0) + 1
+    
     composition = {
       id: existingCompId,
       chapterId: currentChapterId.value,
@@ -636,7 +649,10 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
       title,
       isPinned: existing?.isPinned,
       pinnedAt: existing?.pinnedAt,
-      collectionIds: existing?.collectionIds
+      collectionIds: existing?.collectionIds,
+      creationDuration: previousDuration + sessionDuration,
+      coreImagery,
+      editCount: newEditCount
     }
   } else {
     composition = {
@@ -646,7 +662,10 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
       score: score.value,
       createdAt: now,
       updatedAt: now,
-      title
+      title,
+      creationDuration: sessionDuration,
+      coreImagery,
+      editCount: 0
     }
   }
 
@@ -681,6 +700,7 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
     if (asNewCopy || !isEditing) {
       setEditingComposition(composition.id, title)
     }
+    compositionStartTime.value = now
     justUnlockedChapter.value = null
     clearDraft()
   } else {
@@ -691,6 +711,7 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
     clearEditingState()
     clearDraft()
     justUnlockedChapter.value = null
+    compositionStartTime.value = null
   }
 }
 
@@ -730,6 +751,7 @@ const handleLoadComposition = (comp: Composition) => {
   pushToHistory()
   snapshotStorage.value = setCurrentSnapshot(null)
   setEditingComposition(comp.id, comp.title)
+  compositionStartTime.value = Date.now()
   showPortfolio.value = false
   clearDraft()
 }
@@ -1071,7 +1093,10 @@ onUnmounted(() => {
   stopAutoSave()
 })
 
-watch(boardPhrases, () => {
+watch(boardPhrases, (newPhrases, oldPhrases) => {
+  if (newPhrases.length > 0 && oldPhrases?.length === 0 && !compositionStartTime.value) {
+    compositionStartTime.value = Date.now()
+  }
   checkQuestUnlocks()
   checkQuestCompletion()
   if (!isApplyingHistory.value) {
@@ -1247,6 +1272,7 @@ watch(currentChapterId, (newId) => {
       :compositions="compositions"
       :collections="collections"
       :chaptersTitles="chaptersTitles"
+      :chapters="chapters"
       :editingCompositionId="editingComposition.compositionId"
       @load="handleLoadComposition"
       @delete="handleDeleteComposition"

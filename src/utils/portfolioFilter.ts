@@ -1,5 +1,79 @@
-import type { Composition, Collection, FilterState, GroupBy, SortBy, ScoreGrade, GroupedCompositions, DateGroup } from '@/types'
+import type { Composition, Collection, FilterState, GroupBy, SortBy, ScoreGrade, GroupedCompositions, DateGroup, Chapter } from '@/types'
 import { getScoreGrade } from '@/utils/scoring'
+
+export const formatDuration = (ms: number): string => {
+  if (!ms || ms <= 0) return '未知'
+  
+  const seconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  
+  if (hours > 0) {
+    const remainingMinutes = minutes % 60
+    return remainingMinutes > 0 ? `${hours}时${remainingMinutes}分` : `${hours}小时`
+  }
+  if (minutes > 0) {
+    const remainingSeconds = seconds % 60
+    return remainingSeconds > 0 ? `${minutes}分${remainingSeconds}秒` : `${minutes}分钟`
+  }
+  return `${seconds}秒`
+}
+
+export const getTimeAgo = (timestamp: number): string => {
+  const now = Date.now()
+  const diff = now - timestamp
+  
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes}分钟前`
+  if (hours < 24) return `${hours}小时前`
+  if (days < 7) return `${days}天前`
+  
+  const date = new Date(timestamp)
+  return `${date.getMonth() + 1}月${date.getDate()}日`
+}
+
+export const getChapterProgress = (comp: Composition, chapter?: Chapter): { current: number; target: number; percentage: number; label: string } => {
+  const target = chapter?.targetPhraseCount || 5
+  const current = comp.phrases.length
+  const percentage = Math.min(Math.round((current / target) * 100), 100)
+  
+  let label = ''
+  if (current === 0) label = '未开始'
+  else if (current < target * 0.5) label = '构思中'
+  else if (current < target) label = '创作中'
+  else if (current === target) label = '已完成'
+  else label = '超量完成'
+  
+  return { current, target, percentage, label }
+}
+
+export const getEditStatus = (comp: Composition): { label: string; icon: string; isEdited: boolean; editCount: number } => {
+  const editCount = comp.editCount || 0
+  const isEdited = editCount > 0 || comp.updatedAt > comp.createdAt + 60000
+  
+  let label = '首次创作'
+  let icon = '✦'
+  
+  if (editCount >= 5) {
+    label = '反复雕琢'
+    icon = '✧'
+  } else if (editCount >= 3) {
+    label = '多次润色'
+    icon = '✦'
+  } else if (editCount >= 1) {
+    label = '有所修改'
+    icon = '◇'
+  } else if (comp.updatedAt > comp.createdAt + 300000) {
+    label = '精心打磨'
+    icon = '◆'
+  }
+  
+  return { label, icon, isEdited, editCount: Math.max(editCount, comp.updatedAt > comp.createdAt + 60000 ? 1 : 0) }
+}
 
 const GRADE_ORDER: ScoreGrade[] = ['神品', '妙品', '佳品', '能品', '习作']
 

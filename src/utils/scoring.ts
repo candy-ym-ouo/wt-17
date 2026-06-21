@@ -1319,3 +1319,46 @@ export const generatePhasedGuidance = (
     accentTone: TONE_BY_PHASE[scorePhase]
   }
 }
+
+export const extractCoreImagery = (phrases: Phrase[], maxCount: number = 4): string[] => {
+  if (phrases.length === 0) return []
+  
+  const imageryPhrases = phrases.filter(p => p.category === 'imagery')
+  const scenePhrases = phrases.filter(p => p.category === 'scene')
+  const emotionPhrases = phrases.filter(p => p.category === 'emotion')
+  
+  const sortedImagery = [...imageryPhrases].sort((a, b) => {
+    const rarityOrder: Record<string, number> = { legendary: 4, epic: 3, rare: 2, common: 1 }
+    return (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0)
+  })
+  
+  const sortedScene = [...scenePhrases].sort((a, b) => {
+    const rarityOrder: Record<string, number> = { legendary: 4, epic: 3, rare: 2, common: 1 }
+    return (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0)
+  })
+  
+  const sortedEmotion = [...emotionPhrases].sort((a, b) => {
+    const rarityOrder: Record<string, number> = { legendary: 4, epic: 3, rare: 2, common: 1 }
+    return (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0)
+  })
+  
+  const result: string[] = []
+  const seen = new Set<string>()
+  
+  const addUnique = (text: string) => {
+    if (!seen.has(text) && result.length < maxCount) {
+      seen.add(text)
+      result.push(text)
+    }
+  }
+  
+  sortedImagery.forEach(p => addUnique(p.text))
+  if (result.length < maxCount) {
+    sortedScene.forEach(p => addUnique(p.text))
+  }
+  if (result.length < maxCount) {
+    sortedEmotion.forEach(p => addUnique(p.text))
+  }
+  
+  return result.slice(0, maxCount)
+}
