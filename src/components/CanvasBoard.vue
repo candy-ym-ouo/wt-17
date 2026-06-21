@@ -3,6 +3,19 @@ import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import type { Phrase, CanvasPhrase, Theme, ThemeDecorationType } from '@/types'
 import { categoryColors } from '@/data/phrases'
 import { musicPlayer } from '@/utils/music'
+import {
+  snapToGrid,
+  snapToEdges,
+  generateGuideLines,
+  drawGuideLines,
+  drawConflictIndicator,
+  getPhraseConflicts,
+  detectConflicts,
+  GRID_SIZE,
+  type GuideLine,
+  type SnapEdge,
+  type ConflictInfo
+} from '@/utils/canvasInteraction'
 
 interface Props {
   phrases: Phrase[]
@@ -31,6 +44,16 @@ let decorationParticles: {
   type: ThemeDecorationType; color: string;
 }[] = []
 let lastDecorationSpawn = 0
+
+const gridSnapEnabled = ref(true)
+const edgeSnapEnabled = ref(true)
+const showConflictIndicators = ref(true)
+const shiftKeyPressed = ref(false)
+
+let currentGuideLines: GuideLine[] = []
+let currentSnapEdges: SnapEdge[] = []
+let currentConflicts: ConflictInfo[] = []
+let lastSnapTime = 0
 
 const placedIds = computed(() => new Set(props.boardPhrases.map(p => p.id)))
 
@@ -314,10 +337,16 @@ const drawPhrase = (ctx: CanvasRenderingContext2D, phrase: CanvasPhrase, time: n
     ctx.rotate(Math.sin(time / 600) * 0.01)
   }
   
+  const hasConflict = currentConflicts.some(
+    c => (c.phrase1.id === phrase.id || c.phrase2.id === phrase.id) && !isDragging
+  )
+  
   const shadowBlur = isDragging ? 25 : (isHovered ? 15 : 8)
   const shadowOffset = isDragging ? 8 : (isHovered ? 4 : 2)
   
-  ctx.shadowColor = `rgba(0, 0, 0, ${isDragging ? 0.5 : 0.3})`
+  ctx.shadowColor = hasConflict 
+    ? 'rgba(239, 68, 68, 0.4)' 
+    : `rgba(0, 0, 0, ${isDragging ? 0.5 : 0.3})`
   ctx.shadowBlur = shadowBlur
   ctx.shadowOffsetY = shadowOffset
   
@@ -339,12 +368,15 @@ const drawPhrase = (ctx: CanvasRenderingContext2D, phrase: CanvasPhrase, time: n
   ctx.shadowBlur = 0
   ctx.shadowOffsetY = 0
   
-  ctx.strokeStyle = isDragging ? color : `color-mix(in srgb, ${color} 50%, transparent)`
-  ctx.lineWidth = isDragging ? 2 : 1
+  const strokeColor = hasConflict 
+    ? '#ef4444' 
+    : (isDragging ? color : `color-mix(in srgb, ${color} 50%, transparent)`)
+  ctx.strokeStyle = strokeColor
+  ctx.lineWidth = hasConflict ? 2 : (isDragging ? 2 : 1)
   ctx.stroke()
   
   const barWidth = 3
-  ctx.fillStyle = color
+  ctx.fillStyle = hasConflict ? '#ef4444' : color
   ctx.fillRect(x, y + 4, barWidth, height - 8)
   
   ctx.font = `500 ${fontSize}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-serif')}`
@@ -367,6 +399,15 @@ const drawPhrase = (ctx: CanvasRenderingContext2D, phrase: CanvasPhrase, time: n
   }
   
   ctx.restore()
+  
+  if (showConflictIndicators.value && !isDragging) {
+    const conflictCount = currentConflicts.filter(
+      c => c.phrase1.id === phrase.id || c.phrase2.id === phrase.id
+    ).length
+    if (conflictCount > 0) {
+      drawConflictIndicator(ctx, phrase, conflictCount, fontSize)
+    }
+  }
 }
 
 const drawParticles = (ctx: CanvasRenderingContext2D) => {
@@ -419,9 +460,21 @@ const render = () => {
   drawParticles(ctx)
   
   const time = performance.now()
+  
+  const phrasesWithPosition = props.boardPhrases.filter(p => p.position)
+  if (showConflictIndicators.value && phrasesWithPosition.length > 1) {
+    currentConflicts = detectConflicts(phrasesWithPosition, ctx, 0.05)
+  } else {
+    currentConflicts = []
+  }
+  
   props.boardPhrases.forEach(phrase => {
     drawPhrase(ctx, phrase, time)
   })
+  
+  if (currentGuideLines.length > 0) {
+    drawGuideLines(ctx, currentGuideLines)
+  }
   
   animationId = requestAnimationFrame(render)
 }
@@ -523,13 +576,68 @@ const onPointerMove = (e: MouseEvent | TouchEvent) => {
   
   if (dragPhrase && dragPhrase.isDragging) {
     hasMoved = true
+    
+    let targetX = coords.x - dragPhrase.dragOffset.x
+    let targetY = coords.y - dragPhrase.dragOffset.y
+    
+    const canvas = canvasRef.value
+    const ctx = canvas?.getContext('2d')
+    
+    if (ctx && !shiftKeyPressed.value) {
+      if (gridSnapEnabled.value) {
+        const gridSnapped = snapToGrid(targetX, targetY, GRID_SIZE)
+        targetX = gridSnapped.x
+        targetY = gridSnapped.y
+      }
+      
+      if (edgeSnapEnabled.value) {
+        const snapResult = snapToEdges(
+          dragPhrase,
+          targetX,
+          targetY,
+          props.boardPhrases,
+          ctx,
+          canvasSize.value
+        )
+        
+        if (snapResult.snapped) {
+          targetX = snapResult.x
+          targetY = snapResult.y
+          currentSnapEdges = snapResult.snapEdges
+          
+          currentGuideLines = generateGuideLines(
+            { ...dragPhrase, position: { x: targetX, y: targetY } },
+            snapResult.snapEdges,
+            props.boardPhrases,
+            ctx,
+            canvasSize.value
+          )
+          
+          const now = Date.now()
+          if (now - lastSnapTime > 100) {
+            musicPlayer.playSnapSound?.()
+            lastSnapTime = now
+          }
+        } else {
+          currentSnapEdges = []
+          currentGuideLines = []
+        }
+      } else {
+        currentSnapEdges = []
+        currentGuideLines = []
+      }
+    } else {
+      currentSnapEdges = []
+      currentGuideLines = []
+    }
+    
     const newPhrases = props.boardPhrases.map(p => {
       if (p.id === dragPhrase!.id) {
         return {
           ...p,
           position: {
-            x: coords.x - p.dragOffset.x,
-            y: coords.y - p.dragOffset.y
+            x: targetX,
+            y: targetY
           }
         }
       }
@@ -552,17 +660,26 @@ const onPointerUp = () => {
     })
     emit('update:boardPhrases', newPhrases)
     dragPhrase = null
+    currentGuideLines = []
+    currentSnapEdges = []
   }
 }
 
 const addPhraseToBoard = (phrase: Phrase) => {
   const canvas = canvasRef.value
+  const ctx = canvas?.getContext('2d')
   if (!canvas || placedIds.value.has(phrase.id)) return
   
   const { width, height } = canvasSize.value
   const padding = 60
-  const x = padding + Math.random() * (width - padding * 2)
-  const y = padding + Math.random() * (height - padding * 2)
+  let x = padding + Math.random() * (width - padding * 2)
+  let y = padding + Math.random() * (height - padding * 2)
+  
+  if (ctx && gridSnapEnabled.value) {
+    const gridSnapped = snapToGrid(x, y, GRID_SIZE)
+    x = gridSnapped.x
+    y = gridSnapped.y
+  }
   
   const canvasPhrase: CanvasPhrase = {
     ...phrase,
@@ -590,11 +707,53 @@ const handleResize = () => {
   initCanvas()
 }
 
-defineExpose({ addPhrase: addPhraseFromClick })
+const handleKeyDown = (e: KeyboardEvent) => {
+  if (e.key === 'Shift') {
+    shiftKeyPressed.value = true
+  }
+  if (e.key === 'g' || e.key === 'G') {
+    if (e.ctrlKey || e.metaKey) return
+    gridSnapEnabled.value = !gridSnapEnabled.value
+  }
+  if (e.key === 'e' || e.key === 'E') {
+    if (e.ctrlKey || e.metaKey) return
+    edgeSnapEnabled.value = !edgeSnapEnabled.value
+  }
+}
+
+const handleKeyUp = (e: KeyboardEvent) => {
+  if (e.key === 'Shift') {
+    shiftKeyPressed.value = false
+  }
+}
+
+const toggleGridSnap = () => {
+  gridSnapEnabled.value = !gridSnapEnabled.value
+}
+
+const toggleEdgeSnap = () => {
+  edgeSnapEnabled.value = !edgeSnapEnabled.value
+}
+
+const toggleConflictIndicators = () => {
+  showConflictIndicators.value = !showConflictIndicators.value
+}
+
+defineExpose({ 
+  addPhrase: addPhraseFromClick,
+  toggleGridSnap,
+  toggleEdgeSnap,
+  toggleConflictIndicators,
+  gridSnapEnabled,
+  edgeSnapEnabled,
+  showConflictIndicators
+})
 
 onMounted(() => {
   initCanvas()
   window.addEventListener('resize', handleResize)
+  window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('keyup', handleKeyUp)
   
   const canvas = canvasRef.value
   if (canvas) {
@@ -610,6 +769,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('keydown', handleKeyDown)
+  window.removeEventListener('keyup', handleKeyUp)
   if (animationId) {
     cancelAnimationFrame(animationId)
   }
@@ -633,6 +794,51 @@ watch(() => props.boardPhrases.length, () => {
 <template>
   <div ref="containerRef" class="canvas-board">
     <canvas ref="canvasRef"></canvas>
+    
+    <div class="canvas-controls">
+      <div class="control-group">
+        <button 
+          class="control-btn" 
+          :class="{ active: gridSnapEnabled }"
+          @click="toggleGridSnap"
+          title="网格吸附 (快捷键 G)"
+        >
+          <span class="control-icon">⊞</span>
+          <span class="control-label">网格</span>
+        </button>
+        <button 
+          class="control-btn" 
+          :class="{ active: edgeSnapEnabled }"
+          @click="toggleEdgeSnap"
+          title="边缘吸附 (快捷键 E)"
+        >
+          <span class="control-icon">▣</span>
+          <span class="control-label">对齐</span>
+        </button>
+        <button 
+          class="control-btn" 
+          :class="{ active: showConflictIndicators, warning: currentConflicts.length > 0 }"
+          @click="toggleConflictIndicators"
+          title="冲突检测"
+        >
+          <span class="control-icon">⚠</span>
+          <span class="control-label">检测</span>
+          <span v-if="currentConflicts.length > 0" class="conflict-badge">
+            {{ currentConflicts.length }}
+          </span>
+        </button>
+      </div>
+      <div class="control-hint">
+        <span v-if="shiftKeyPressed" class="hint-text">按住 Shift: 暂停吸附</span>
+        <span v-else class="hint-text">快捷键: G 网格 | E 对齐 | Shift 暂停</span>
+      </div>
+    </div>
+    
+    <div v-if="currentConflicts.length > 0 && showConflictIndicators" class="conflict-warning">
+      <span class="conflict-icon">⚠</span>
+      <span class="conflict-text">检测到 {{ currentConflicts.length }} 处词块重叠，请调整位置</span>
+    </div>
+    
     <div v-if="boardPhrases.length === 0" class="empty-overlay">
       <div class="empty-inner">
         <div class="empty-icon">✦</div>
@@ -658,6 +864,151 @@ canvas {
   display: block;
   cursor: default;
   touch-action: none;
+}
+
+.canvas-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.control-group {
+  display: flex;
+  gap: 6px;
+  background: rgba(26, 26, 46, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  pointer-events: auto;
+}
+
+.control-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  font-family: var(--font-serif);
+}
+
+.control-btn:hover {
+  background: rgba(201, 168, 108, 0.1);
+  color: var(--text-primary);
+}
+
+.control-btn.active {
+  background: rgba(201, 168, 108, 0.2);
+  border-color: rgba(201, 168, 108, 0.4);
+  color: var(--accent-gold);
+}
+
+.control-btn.warning {
+  animation: pulse-warning 2s ease-in-out infinite;
+}
+
+@keyframes pulse-warning {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
+  }
+}
+
+.control-btn.warning.active {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+
+.control-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.control-label {
+  font-size: 11px;
+}
+
+.conflict-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  background: #ef4444;
+  color: white;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.control-hint {
+  background: rgba(26, 26, 46, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  pointer-events: auto;
+}
+
+.hint-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-serif);
+}
+
+.conflict-warning {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(239, 68, 68, 0.9);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: var(--font-serif);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+  z-index: 10;
+  animation: slideUp 0.3s ease;
+  pointer-events: none;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.conflict-icon {
+  font-size: 16px;
 }
 
 .empty-overlay {
@@ -691,5 +1042,45 @@ canvas {
 .empty-sub {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@media (max-width: 640px) {
+  .canvas-controls {
+    top: 8px;
+    right: 8px;
+  }
+  
+  .control-group {
+    padding: 4px;
+    gap: 4px;
+  }
+  
+  .control-btn {
+    padding: 4px 8px;
+  }
+  
+  .control-label {
+    display: none;
+  }
+  
+  .control-hint {
+    display: none;
+  }
+  
+  .conflict-warning {
+    padding: 8px 12px;
+    font-size: 11px;
+    max-width: 90%;
+    text-align: center;
+  }
 }
 </style>

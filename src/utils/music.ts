@@ -281,6 +281,28 @@ export class AmbientMusicPlayer {
     osc.stop(now + 0.25)
   }
 
+  playSnapSound(): void {
+    if (!this.audioContext || !this.crossfadeGain) return
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume()
+    }
+
+    const sc = this.currentSoundscape
+    const freq = sc.scale[Math.floor(Math.random() * sc.scale.length)] * 2
+
+    const osc = this.audioContext.createOscillator()
+    const gain = this.audioContext.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = freq
+    const now = this.audioContext.currentTime
+    gain.gain.setValueAtTime(0.05, now)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08)
+    osc.connect(gain)
+    gain.connect(this.crossfadeGain)
+    osc.start(now)
+    osc.stop(now + 0.1)
+  }
+
   playSuccessSound(): void {
     if (!this.audioContext || !this.crossfadeGain) return
     if (this.audioContext.state === 'suspended') {
