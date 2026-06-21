@@ -1,5 +1,6 @@
 import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase, Theme, ThemeState, StreakState } from '@/types'
 import { DEFAULT_THEME_ID } from '@/data/themes'
+import { getAllPhrases, getPhraseRarity } from '@/data/phrases'
 
 const STORAGE_KEYS = {
   COMPOSITIONS: 'poem_slices_compositions',
@@ -270,7 +271,7 @@ export const getCollectedPhrasesByRarity = (): Record<string, number> => {
   }
   Object.values(state.phraseCollection.collectedPhrases).forEach(record => {
     const phraseText = record.phraseText
-    const rarity = determinePhraseRarity(phraseText)
+    const rarity = getPhraseRarity(phraseText)
     if (rarity in counts) {
       counts[rarity]++
     }
@@ -279,10 +280,7 @@ export const getCollectedPhrasesByRarity = (): Record<string, number> => {
 }
 
 const determinePhraseRarity = (text: string): string => {
-  if (text.length >= 5) return 'legendary'
-  if (text.length >= 4) return 'epic'
-  if (text.length >= 3) return 'rare'
-  return 'common'
+  return getPhraseRarity(text)
 }
 
 export const getStreakState = (): StreakState => {

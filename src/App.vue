@@ -920,10 +920,17 @@ const checkCondition = (condition: QuestCondition, ctx: { compositions: Composit
     }
     case 'all_chapters_score': {
       const minScore = params.minScore as number
-      const chapters = getAllBestScores()
-      const chapterIds = Object.keys(chapters)
-      if (chapterIds.length === 0) return false
-      return chapterIds.every(id => chapters[id] >= minScore)
+      const bestScores = getAllBestScores()
+      const unlockedChapterIds = chapters
+        .filter(ch => isChapterUnlocked(ch.id) || ch.unlocked)
+        .map(ch => ch.id)
+      
+      if (unlockedChapterIds.length === 0) return false
+      
+      return unlockedChapterIds.every(id => {
+        const chapterBest = bestScores[id] || 0
+        return chapterBest >= minScore
+      })
     }
     case 'collection_composition_count': {
       const minCount = params.minCount as number

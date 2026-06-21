@@ -191,6 +191,14 @@ export const getPhrasesByRarity = (rarity: PhraseRarity): Phrase[] => {
   return getAllPhrases().filter(p => p.rarity === rarity)
 }
 
+export const getPhraseRarity = (text: string): PhraseRarity => {
+  const basePhrase = getAllPhrases().find(p => p.text === text)
+  if (basePhrase) return basePhrase.rarity
+  const rewardPhrase = rewardPhrases[text]
+  if (rewardPhrase) return rewardPhrase.rarity
+  return 'common'
+}
+
 const pickRandom = <T>(arr: T[], n: number): T[] => {
   const shuffled = [...arr].sort(() => Math.random() - 0.5)
   return shuffled.slice(0, n)
