@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress } from '@/types'
 import { chapters, getChapterById, chapterDropConfigs } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource } from '@/data/phrases'
 import { calculateScore, generatePoemTitle } from '@/utils/scoring'
 import {
   loadGameState, saveGameState, loadCompositions, saveComposition, deleteComposition,
-  unlockChapter, isChapterUnlocked,
+  unlockChapter, isChapterUnlocked, getAllBestScores, getCompositionsByChapter,
   saveEditingComposition, loadEditingComposition, clearEditingComposition,
   loadCollections, createCollection, deleteCollection, updateCollection,
   addCompositionToCollection, removeCompositionFromCollection,
@@ -370,6 +370,32 @@ const unlockedChapterIds = computed(() => {
     }
   })
   return ids
+})
+
+const chapterProgress = computed((): Record<string, ChapterProgress> => {
+  const bestScores = getAllBestScores()
+  const progress: Record<string, ChapterProgress> = {}
+  chapters.forEach(ch => {
+    const bestScore = bestScores[ch.id] || 0
+    const chapterQuests = sideQuests.filter(q => q.chapterId === ch.id)
+    const completedQuests = chapterQuests
+      .filter(q => questState.value.completedQuests.includes(q.id))
+      .map(q => q.id)
+    const totalQuests = chapterQuests.map(q => q.id)
+    const compositionCount = getCompositionsByChapter(ch.id).length
+    let starRating = 0
+    if (bestScore >= 90) starRating = 3
+    else if (bestScore >= 75) starRating = 2
+    else if (bestScore >= 60) starRating = 1
+    progress[ch.id] = {
+      bestScore,
+      starRating,
+      completedQuests,
+      totalQuests,
+      compositionCount
+    }
+  })
+  return progress
 })
 
 const chaptersTitles = computed(() => {
@@ -1002,6 +1028,9 @@ watch(boardPhrases, () => {
       :chapters="chapters"
       :unlockedIds="unlockedChapterIds"
       :currentId="currentChapterId"
+      :chapterProgress="chapterProgress"
+      :questState="questState"
+      :sideQuests="sideQuests"
       @select="handleSelectChapter"
       @close="handleCloseChapters"
     />

@@ -89,6 +89,23 @@ export const getCompositionsByChapter = (chapterId: string): Composition[] => {
   return loadCompositions().filter(c => c.chapterId === chapterId)
 }
 
+export const getBestScoreByChapter = (chapterId: string): number => {
+  const chapterComps = getCompositionsByChapter(chapterId)
+  if (chapterComps.length === 0) return 0
+  return Math.max(...chapterComps.map(c => c.score.total))
+}
+
+export const getAllBestScores = (): Record<string, number> => {
+  const allComps = loadCompositions()
+  const scores: Record<string, number> = {}
+  allComps.forEach(c => {
+    if (!scores[c.chapterId] || c.score.total > scores[c.chapterId]) {
+      scores[c.chapterId] = c.score.total
+    }
+  })
+  return scores
+}
+
 export const unlockChapter = (chapterId: string): void => {
   const state = loadGameState()
   if (!state.unlockedChapters.includes(chapterId)) {

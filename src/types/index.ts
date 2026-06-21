@@ -124,6 +124,14 @@ export interface Collection {
   updatedAt: number
 }
 
+export interface ChapterProgress {
+  bestScore: number
+  starRating: number
+  completedQuests: string[]
+  totalQuests: string[]
+  compositionCount: number
+}
+
 export type ScoreGrade = '神品' | '妙品' | '佳品' | '能品' | '习作'
 
 export type GroupBy = 'chapter' | 'grade' | 'date' | 'collection' | 'none'
