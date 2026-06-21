@@ -3,6 +3,8 @@ import { ref, watch } from 'vue'
 import type { Composition, ScoreBreakdown } from '@/types'
 import { getScoreGrade } from '@/utils/scoring'
 
+type PostSaveMode = 'finish' | 'continue'
+
 interface Props {
   visible: boolean
   title: string
@@ -15,17 +17,19 @@ interface Props {
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
-  (e: 'confirm', title: string): void
-  (e: 'saveAsNew', title: string): void
+  (e: 'confirm', title: string, continueEditing: boolean): void
+  (e: 'saveAsNew', title: string, continueEditing: boolean): void
   (e: 'cancel'): void
   (e: 'nextChapter'): void
 }>()
 
 const inputTitle = ref('')
+const postSaveMode = ref<PostSaveMode>('finish')
 
 watch(() => props.visible, (v) => {
   if (v) {
     inputTitle.value = props.title
+    postSaveMode.value = 'finish'
   }
 })
 
@@ -49,7 +53,7 @@ const grade = () => getScoreGrade(props.score.total)
       <div class="save-body">
         <div v-if="isEditing" class="editing-badge">
           <span class="editing-dot"></span>
-          <span>正在编辑「{{ originalTitle }}」· 保存将原位更新</span>
+          <span>正在编辑「{{ originalTitle }}」</span>
         </div>
         
         <div class="save-comment">
@@ -68,6 +72,28 @@ const grade = () => getScoreGrade(props.score.total)
             placeholder="为这首诗起个名字..."
             maxlength="20"
           />
+        </div>
+
+        <div class="post-save-group">
+          <label class="input-label">保存后</label>
+          <div class="post-save-toggle">
+            <button
+              class="toggle-option"
+              :class="{ active: postSaveMode === 'finish' }"
+              @click="postSaveMode = 'finish'"
+            >
+              <span class="toggle-icon">✓</span>
+              完成
+            </button>
+            <button
+              class="toggle-option"
+              :class="{ active: postSaveMode === 'continue' }"
+              @click="postSaveMode = 'continue'"
+            >
+              <span class="toggle-icon">✎</span>
+              继续润色
+            </button>
+          </div>
         </div>
         
         <div v-if="unlockedNext" class="unlock-notice">
@@ -88,12 +114,12 @@ const grade = () => getScoreGrade(props.score.total)
         <button 
           v-if="isEditing" 
           class="btn-saveas" 
-          @click="emit('saveAsNew', inputTitle || '无题')"
+          @click="emit('saveAsNew', inputTitle || '无题', postSaveMode === 'continue')"
         >
-          另存为新
+          另存新稿
         </button>
-        <button class="btn-confirm" @click="emit('confirm', inputTitle || '无题')">
-          {{ isEditing ? '更新原作' : '保存诗笺' }}
+        <button class="btn-confirm" @click="emit('confirm', inputTitle || '无题', postSaveMode === 'continue')">
+          {{ isEditing ? '覆盖原稿' : '保存诗笺' }}
         </button>
       </div>
     </div>
@@ -194,6 +220,51 @@ const grade = () => getScoreGrade(props.score.total)
   margin-bottom: 16px;
 }
 
+.post-save-group {
+  margin-bottom: 16px;
+}
+
+.post-save-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.toggle-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+}
+
+.toggle-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+}
+
+.toggle-option.active {
+  background: rgba(201, 168, 108, 0.1);
+  border-color: rgba(201, 168, 108, 0.4);
+  color: var(--accent-gold);
+}
+
+.toggle-icon {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.toggle-option.active .toggle-icon {
+  opacity: 1;
+}
+
 .input-label {
   display: block;
   font-size: 12px;
@@ -252,7 +323,7 @@ const grade = () => getScoreGrade(props.score.total)
   border-top: 1px solid var(--border);
 }
 
-.btn-cancel, .btn-next, .btn-confirm {
+.btn-cancel, .btn-next, .btn-confirm, .btn-saveas {
   flex: 1;
   padding: 12px 16px;
   border-radius: 10px;

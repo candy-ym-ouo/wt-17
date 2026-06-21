@@ -519,7 +519,7 @@ const handleSave = () => {
   showSaveDialog.value = true
 }
 
-const doSaveComposition = (title: string, asNewCopy: boolean) => {
+const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: boolean) => {
   if (!currentChapter.value) return
 
   const phrases = boardPhrases.value.map(p => ({
@@ -548,7 +548,10 @@ const doSaveComposition = (title: string, asNewCopy: boolean) => {
       score: score.value,
       createdAt: existing?.createdAt || now,
       updatedAt: now,
-      title
+      title,
+      isPinned: existing?.isPinned,
+      pinnedAt: existing?.pinnedAt,
+      collectionIds: existing?.collectionIds
     }
   } else {
     composition = {
@@ -585,21 +588,29 @@ const doSaveComposition = (title: string, asNewCopy: boolean) => {
   checkQuestCompletion()
 
   showSaveDialog.value = false
-  boardPhrases.value = []
-  historyManager.reset()
-  pushToHistory()
-  snapshotStorage.value = setCurrentSnapshot(null)
-  clearEditingState()
-  clearDraft()
-  justUnlockedChapter.value = null
+
+  if (continueEditing) {
+    if (asNewCopy || !isEditing) {
+      setEditingComposition(composition.id, title)
+    }
+    clearDraft()
+  } else {
+    boardPhrases.value = []
+    historyManager.reset()
+    pushToHistory()
+    snapshotStorage.value = setCurrentSnapshot(null)
+    clearEditingState()
+    clearDraft()
+    justUnlockedChapter.value = null
+  }
 }
 
-const handleConfirmSave = (title: string) => {
-  doSaveComposition(title, false)
+const handleConfirmSave = (title: string, continueEditing: boolean) => {
+  doSaveComposition(title, false, continueEditing)
 }
 
-const handleSaveAsNew = (title: string) => {
-  doSaveComposition(title, true)
+const handleSaveAsNew = (title: string, continueEditing: boolean) => {
+  doSaveComposition(title, true, continueEditing)
 }
 
 const handleLoadComposition = (comp: Composition) => {
