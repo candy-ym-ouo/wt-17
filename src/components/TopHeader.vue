@@ -9,6 +9,8 @@ interface Props {
   canUndo: boolean
   canRedo: boolean
   snapshotCount: number
+  isEditingComposition: boolean
+  editingTitle: string
 }
 
 defineProps<Props>()
@@ -37,6 +39,11 @@ const emit = defineEmits<{
         <span class="chapter-name">{{ chapter?.title || '选择章节' }}</span>
         <span class="chapter-arrow">▾</span>
       </button>
+      <div v-if="isEditingComposition" class="editing-indicator">
+        <span class="editing-pulse"></span>
+        <span class="editing-label">编辑中：</span>
+        <span class="editing-title">{{ editingTitle }}</span>
+      </div>
     </div>
     
     <div class="header-right">
@@ -98,9 +105,9 @@ const emit = defineEmits<{
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺
       </button>
-      <button class="save-btn" @click="emit('save')">
+      <button class="save-btn" :class="{ 'editing-btn': isEditingComposition }" @click="emit('save')">
         <span class="save-icon">✎</span>
-        <span class="save-text">保存诗笺</span>
+        <span class="save-text">{{ isEditingComposition ? '更新原作' : '保存诗笺' }}</span>
       </button>
     </div>
   </header>
@@ -326,6 +333,14 @@ const emit = defineEmits<{
   box-shadow: 0 4px 16px rgba(201, 168, 108, 0.3);
 }
 
+.save-btn.editing-btn {
+  background: linear-gradient(135deg, #8b4557 0%, #6b3547 100%);
+}
+
+.save-btn.editing-btn:hover {
+  box-shadow: 0 4px 16px rgba(139, 69, 87, 0.3);
+}
+
 .save-icon {
   font-size: 14px;
 }
@@ -333,6 +348,54 @@ const emit = defineEmits<{
 .save-text {
   font-family: var(--font-serif);
   letter-spacing: 1px;
+}
+
+.editing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  margin-left: 8px;
+  background: rgba(139, 69, 87, 0.12);
+  border: 1px solid rgba(139, 69, 87, 0.35);
+  border-radius: 20px;
+  animation: fadeIn 0.3s ease;
+}
+
+.editing-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-red);
+  box-shadow: 0 0 8px var(--accent-red);
+  animation: editingPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes editingPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+.editing-label {
+  font-size: 11px;
+  color: var(--accent-red);
+  letter-spacing: 1px;
+}
+
+.editing-title {
+  font-family: var(--font-brush);
+  font-size: 13px;
+  color: #d4a8b5;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 640px) {

@@ -7,8 +7,10 @@ import { rewardPhrases, refreshPoolByCategory, createPhrase } from '@/data/phras
 import { calculateScore, generatePoemTitle } from '@/utils/scoring'
 import {
   loadGameState, saveGameState, loadCompositions, saveComposition, deleteComposition,
-  unlockChapter, isChapterUnlocked
+  unlockChapter, isChapterUnlocked,
+  saveEditingComposition, loadEditingComposition, clearEditingComposition
 } from '@/utils/storage'
+import type { EditingCompositionState } from '@/utils/storage'
 import {
   loadQuestState, saveQuestState, unlockQuest, completeQuest, claimReward,
   isQuestUnlocked, isQuestCompleted, isRewardClaimed, addWeightBoost,
@@ -45,6 +47,10 @@ const justUnlockedChapter = ref<string | null>(null)
 const questState = ref<QuestState>(loadQuestState())
 
 const snapshotStorage = ref(loadSnapshots())
+const editingComposition = ref<EditingCompositionState>(loadEditingComposition())
+
+const isEditingComposition = computed(() => editingComposition.value.compositionId !== null)
+const editingOriginalTitle = computed(() => editingComposition.value.originalTitle || '')
 
 const historyManager = createHistoryManager(50)
 const canUndo = ref(false)
@@ -142,6 +148,20 @@ const handleRenameSnapshot = (snapshotId: string, newName: string) => {
   snapshotStorage.value = renameSnapshot(snapshotId, newName)
 }
 
+const setEditingComposition = (compId: string | null, title: string | null = null) => {
+  const state: EditingCompositionState = {
+    compositionId: compId,
+    originalTitle: title,
+    loadedAt: compId ? Date.now() : null
+  }
+  editingComposition.value = state
+  saveEditingComposition(state)
+}
+
+const clearEditingState = () => {
+  setEditingComposition(null, null)
+}
+
 const handleKeydown = (e: KeyboardEvent) => {
   const isMeta = e.metaKey || e.ctrlKey
   if (isMeta && e.key === 'z' && !e.shiftKey) {
@@ -153,6 +173,9 @@ const handleKeydown = (e: KeyboardEvent) => {
   } else if (isMeta && e.key === 'y') {
     e.preventDefault()
     handleRedo()
+  } else if (isMeta && e.key === 's') {
+    e.preventDefault()
+    handleSave()
   }
 }
 
@@ -260,7 +283,10 @@ const handleChangeVolume = (vol: number) => {
 
 const handleSelectChapter = (chapterId: string) => {
   if (boardPhrases.value.length > 0) {
-    if (!confirm('切换章节将清空当前画布，确定吗？')) {
+    const hint = isEditingComposition.value
+      ? `切换章节将清空当前编辑中的「${editingOriginalTitle.value}」，确定吗？`
+      : '切换章节将清空当前画布，确定吗？'
+    if (!confirm(hint)) {
       return
     }
   }
@@ -271,15 +297,20 @@ const handleSelectChapter = (chapterId: string) => {
   historyManager.reset()
   pushToHistory()
   snapshotStorage.value = setCurrentSnapshot(null)
+  clearEditingState()
   showChapters.value = false
   justUnlockedChapter.value = null
 }
 
 const handleReset = () => {
   if (boardPhrases.value.length === 0) return
-  if (confirm('确定要清空画布吗？')) {
+  const hint = isEditingComposition.value
+    ? `确定要清空当前编辑中的「${editingOriginalTitle.value}」吗？将退出编辑态。`
+    : '确定要清空画布吗？'
+  if (confirm(hint)) {
     boardPhrases.value = []
     snapshotStorage.value = setCurrentSnapshot(null)
+    clearEditingState()
     pushToHistory()
   }
 }
@@ -292,9 +323,9 @@ const handleSave = () => {
   showSaveDialog.value = true
 }
 
-const handleConfirmSave = (title: string) => {
+const doSaveComposition = (title: string, asNewCopy: boolean) => {
   if (!currentChapter.value) return
-  
+
   const phrases = boardPhrases.value.map(p => ({
     id: p.id,
     text: p.text,
@@ -304,22 +335,39 @@ const handleConfirmSave = (title: string) => {
     isPlaced: p.isPlaced,
     weight: p.weight
   }))
-  
+
   const now = Date.now()
-  const composition: Composition = {
-    id: `comp_${now}`,
-    chapterId: currentChapterId.value,
-    phrases,
-    score: score.value,
-    createdAt: now,
-    updatedAt: now,
-    title
+  const isEditing = isEditingComposition.value && !asNewCopy
+  const existingCompId = editingComposition.value.compositionId
+
+  let composition: Composition
+  if (isEditing && existingCompId) {
+    const existing = compositions.value.find(c => c.id === existingCompId)
+    composition = {
+      id: existingCompId,
+      chapterId: currentChapterId.value,
+      phrases,
+      score: score.value,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+      title
+    }
+  } else {
+    composition = {
+      id: `comp_${now}`,
+      chapterId: currentChapterId.value,
+      phrases,
+      score: score.value,
+      createdAt: now,
+      updatedAt: now,
+      title
+    }
   }
-  
+
   saveComposition(composition)
   compositions.value = loadCompositions()
   musicPlayer.playSuccessSound()
-  
+
   if (currentChapter.value && score.value.total >= 60) {
     const currentIndex = chapters.findIndex(ch => ch.id === currentChapterId.value)
     if (currentIndex >= 0 && currentIndex < chapters.length - 1) {
@@ -333,13 +381,22 @@ const handleConfirmSave = (title: string) => {
 
   checkQuestUnlocks()
   checkQuestCompletion()
-  
+
   showSaveDialog.value = false
   boardPhrases.value = []
   historyManager.reset()
   pushToHistory()
   snapshotStorage.value = setCurrentSnapshot(null)
+  clearEditingState()
   justUnlockedChapter.value = null
+}
+
+const handleConfirmSave = (title: string) => {
+  doSaveComposition(title, false)
+}
+
+const handleSaveAsNew = (title: string) => {
+  doSaveComposition(title, true)
 }
 
 const handleLoadComposition = (comp: Composition) => {
@@ -360,6 +417,7 @@ const handleLoadComposition = (comp: Composition) => {
   historyManager.reset()
   pushToHistory()
   snapshotStorage.value = setCurrentSnapshot(null)
+  setEditingComposition(comp.id, comp.title)
   showPortfolio.value = false
 }
 
@@ -367,6 +425,9 @@ const handleDeleteComposition = (id: string) => {
   if (!confirm('确定要删除这首诗吗？')) return
   deleteComposition(id)
   compositions.value = loadCompositions()
+  if (editingComposition.value.compositionId === id) {
+    clearEditingState()
+  }
 }
 
 const handleNextChapter = () => {
@@ -383,6 +444,7 @@ const handleNextChapter = () => {
   historyManager.reset()
   pushToHistory()
   snapshotStorage.value = setCurrentSnapshot(null)
+  clearEditingState()
   justUnlockedChapter.value = null
 }
 
@@ -559,6 +621,8 @@ watch(boardPhrases, () => {
       :canUndo="canUndo"
       :canRedo="canRedo"
       :snapshotCount="snapshotStorage.snapshots.length"
+      :isEditingComposition="isEditingComposition"
+      :editingTitle="editingOriginalTitle"
       @toggleMusic="handleToggleMusic"
       @changeVolume="handleChangeVolume"
       @openChapters="showChapters = true"
@@ -635,6 +699,7 @@ watch(boardPhrases, () => {
       v-if="showPortfolio"
       :compositions="compositions"
       :chaptersTitles="chaptersTitles"
+      :editingCompositionId="editingComposition.compositionId"
       @load="handleLoadComposition"
       @delete="handleDeleteComposition"
       @close="showPortfolio = false"
@@ -646,7 +711,10 @@ watch(boardPhrases, () => {
       :score="score"
       :unlockedNext="!!justUnlockedChapter"
       :nextChapterTitle="justUnlockedChapter"
+      :isEditing="isEditingComposition"
+      :originalTitle="editingOriginalTitle"
       @confirm="handleConfirmSave"
+      @saveAsNew="handleSaveAsNew"
       @cancel="showSaveDialog = false"
       @nextChapter="handleNextChapter"
     />

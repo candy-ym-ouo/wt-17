@@ -5,6 +5,7 @@ import { getScoreGrade } from '@/utils/scoring'
 interface Props {
   compositions: Composition[]
   chaptersTitles: Record<string, { title: string; accent: string }>
+  editingCompositionId: string | null
 }
 
 defineProps<Props>()
@@ -36,10 +37,16 @@ const formatDate = (ts: number) => {
           v-for="comp in compositions"
           :key="comp.id"
           class="composition-card"
+          :class="{ 'editing-card': comp.id === editingCompositionId }"
         >
           <div class="comp-main" @click="emit('load', comp)">
             <div class="comp-header">
-              <h3 class="comp-title">{{ comp.title || '无题' }}</h3>
+              <div class="comp-title-row">
+                <h3 class="comp-title">{{ comp.title || '无题' }}</h3>
+                <span v-if="comp.id === editingCompositionId" class="comp-editing-tag">
+                  编辑中
+                </span>
+              </div>
               <span 
                 class="comp-grade"
                 :style="{ color: getScoreGrade(comp.score.total).color }"
@@ -184,11 +191,32 @@ const formatDate = (ts: number) => {
   margin-bottom: 10px;
 }
 
+.comp-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .comp-title {
   font-family: var(--font-brush);
   font-size: 20px;
   color: var(--text-primary);
   letter-spacing: 1px;
+}
+
+.comp-editing-tag {
+  padding: 2px 8px;
+  background: rgba(139, 69, 87, 0.2);
+  border: 1px solid rgba(139, 69, 87, 0.4);
+  color: var(--accent-red);
+  font-size: 10px;
+  border-radius: 10px;
+  letter-spacing: 1px;
+}
+
+.composition-card.editing-card {
+  border-color: rgba(139, 69, 87, 0.6);
+  background: linear-gradient(135deg, rgba(139, 69, 87, 0.08), rgba(26, 26, 46, 0.85));
 }
 
 .comp-grade {

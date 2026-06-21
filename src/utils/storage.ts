@@ -4,6 +4,7 @@ const STORAGE_KEYS = {
   COMPOSITIONS: 'poem_slices_compositions',
   GAME_STATE: 'poem_slices_game_state',
   QUEST_STATE: 'poem_slices_quest_state',
+  EDITING_COMPOSITION: 'poem_slices_editing_composition',
 }
 
 const DEFAULT_QUEST_STATE: QuestState = {
@@ -176,4 +177,38 @@ export const addEarnedTitle = (title: string): void => {
     state.earnedTitles.push(title)
     saveQuestState(state)
   }
+}
+
+export interface EditingCompositionState {
+  compositionId: string | null
+  originalTitle: string | null
+  loadedAt: number | null
+}
+
+const DEFAULT_EDITING_STATE: EditingCompositionState = {
+  compositionId: null,
+  originalTitle: null,
+  loadedAt: null
+}
+
+export const saveEditingComposition = (state: EditingCompositionState): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.EDITING_COMPOSITION, JSON.stringify(state))
+  } catch (e) {
+    console.error('Failed to save editing composition state:', e)
+  }
+}
+
+export const loadEditingComposition = (): EditingCompositionState => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.EDITING_COMPOSITION)
+    return data ? { ...DEFAULT_EDITING_STATE, ...JSON.parse(data) } : { ...DEFAULT_EDITING_STATE }
+  } catch (e) {
+    console.error('Failed to load editing composition state:', e)
+    return { ...DEFAULT_EDITING_STATE }
+  }
+}
+
+export const clearEditingComposition = (): void => {
+  localStorage.removeItem(STORAGE_KEYS.EDITING_COMPOSITION)
 }

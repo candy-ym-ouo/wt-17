@@ -9,11 +9,14 @@ interface Props {
   score: ScoreBreakdown
   unlockedNext: boolean
   nextChapterTitle: string | null
+  isEditing: boolean
+  originalTitle: string
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'confirm', title: string): void
+  (e: 'saveAsNew', title: string): void
   (e: 'cancel'): void
   (e: 'nextChapter'): void
 }>()
@@ -44,6 +47,11 @@ const grade = () => getScoreGrade(props.score.total)
       </div>
       
       <div class="save-body">
+        <div v-if="isEditing" class="editing-badge">
+          <span class="editing-dot"></span>
+          <span>正在编辑「{{ originalTitle }}」· 保存将原位更新</span>
+        </div>
+        
         <div class="save-comment">
           <span class="quote">「</span>
           {{ grade().comment }}
@@ -56,6 +64,7 @@ const grade = () => getScoreGrade(props.score.total)
             v-model="inputTitle"
             type="text" 
             class="title-input"
+            :class="{ 'editing-input': isEditing }"
             placeholder="为这首诗起个名字..."
             maxlength="20"
           />
@@ -76,8 +85,15 @@ const grade = () => getScoreGrade(props.score.total)
         >
           前往新章节
         </button>
+        <button 
+          v-if="isEditing" 
+          class="btn-saveas" 
+          @click="emit('saveAsNew', inputTitle || '无题')"
+        >
+          另存为新
+        </button>
         <button class="btn-confirm" @click="emit('confirm', inputTitle || '无题')">
-          保存诗笺
+          {{ isEditing ? '更新原作' : '保存诗笺' }}
         </button>
       </div>
     </div>
@@ -275,5 +291,53 @@ const grade = () => getScoreGrade(props.score.total)
 .btn-confirm:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(201, 168, 108, 0.3);
+}
+
+.editing-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: linear-gradient(90deg, rgba(139, 69, 87, 0.1), rgba(139, 69, 87, 0.05));
+  border: 1px solid rgba(139, 69, 87, 0.3);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--accent-red);
+  animation: fadeIn 0.3s ease;
+}
+
+.editing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-red);
+  box-shadow: 0 0 8px var(--accent-red);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.editing-input {
+  border-color: rgba(139, 69, 87, 0.3) !important;
+  background: rgba(139, 69, 87, 0.04) !important;
+}
+
+.editing-input:focus {
+  border-color: var(--accent-red) !important;
+}
+
+.btn-saveas {
+  background: rgba(91, 122, 140, 0.15);
+  color: var(--accent-blue);
+  border: 1px solid rgba(91, 122, 140, 0.3);
+}
+
+.btn-saveas:hover {
+  background: rgba(91, 122, 140, 0.25);
 }
 </style>
