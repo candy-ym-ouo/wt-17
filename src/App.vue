@@ -11,9 +11,10 @@ import {
   saveEditingComposition, loadEditingComposition, clearEditingComposition,
   loadCollections, createCollection, deleteCollection, updateCollection,
   addCompositionToCollection, removeCompositionFromCollection,
-  pinComposition, unpinComposition
+  pinComposition, unpinComposition,
+  saveDraft, loadDraft, clearDraft, hasDraft, createDraftFromState
 } from '@/utils/storage'
-import type { EditingCompositionState } from '@/utils/storage'
+import type { EditingCompositionState, DraftState, DraftSource } from '@/utils/storage'
 import type { Collection } from '@/types'
 import {
   loadQuestState, saveQuestState, unlockQuest, completeQuest, claimReward,
@@ -57,6 +58,87 @@ const snapshotStorage = ref(loadSnapshots())
 const editingComposition = ref<EditingCompositionState>(loadEditingComposition())
 
 const chapterDropCache = ref<Record<string, Phrase[]>>({})
+
+const showDraftRestoreDialog = ref(false)
+const pendingDraft = ref<DraftState | null>(null)
+const lastAutoSaveTime = ref<number>(0)
+const autoSaveInterval = 30000
+
+let autoSaveTimer: number | null = null
+
+const saveCurrentDraft = (source: DraftSource) => {
+  if (boardPhrases.value.length === 0) {
+    clearDraft()
+    return
+  }
+  const draft = createDraftFromState(
+    currentChapterId.value,
+    boardPhrases.value,
+    editingComposition.value.compositionId,
+    editingComposition.value.originalTitle,
+    source
+  )
+  saveDraft(draft)
+  lastAutoSaveTime.value = Date.now()
+}
+
+const restoreDraft = (draft: DraftState) => {
+  if (draft.chapterId !== currentChapterId.value) {
+    currentChapterId.value = draft.chapterId
+    gameState.value.currentChapterId = draft.chapterId
+    saveGameState({ currentChapterId: draft.chapterId })
+  }
+  
+  boardPhrases.value = draft.phrases.map(p => ({
+    ...p,
+    isDragging: false,
+    dragOffset: { x: 0, y: 0 },
+    width: p.width || 0,
+    height: p.height || 0
+  }))
+  
+  if (draft.editingCompositionId) {
+    setEditingComposition(draft.editingCompositionId, draft.editingOriginalTitle)
+  }
+  
+  historyManager.reset()
+  pushToHistory()
+  snapshotStorage.value = setCurrentSnapshot(null)
+  
+  clearDraft()
+  showDraftRestoreDialog.value = false
+  pendingDraft.value = null
+}
+
+const discardDraft = () => {
+  clearDraft()
+  showDraftRestoreDialog.value = false
+  pendingDraft.value = null
+}
+
+const startAutoSave = () => {
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer)
+  }
+  autoSaveTimer = window.setInterval(() => {
+    if (boardPhrases.value.length > 0) {
+      saveCurrentDraft('auto')
+    }
+  }, autoSaveInterval)
+}
+
+const stopAutoSave = () => {
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer)
+    autoSaveTimer = null
+  }
+}
+
+const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('page_unload')
+  }
+}
 
 const getOrGenerateChapterDrops = (chapterId: string): Phrase[] => {
   if (chapterDropCache.value[chapterId]) {
@@ -170,6 +252,15 @@ const handleCreateSnapshot = () => {
 }
 
 const handleRestoreSnapshot = (snap: HistorySnapshot) => {
+  if (boardPhrases.value.length > 0) {
+    const hint = '恢复快照将替换当前画布内容，是否保存当前内容为草稿？'
+    if (confirm(hint)) {
+      saveCurrentDraft('dialog_close')
+    } else {
+      clearDraft()
+    }
+  }
+  
   if (snap.chapterId !== currentChapterId.value) {
     currentChapterId.value = snap.chapterId
     gameState.value.currentChapterId = snap.chapterId
@@ -354,10 +445,12 @@ const handleChangeVolume = (vol: number) => {
 const handleSelectChapter = (chapterId: string) => {
   if (boardPhrases.value.length > 0) {
     const hint = isEditingComposition.value
-      ? `切换章节将清空当前编辑中的「${editingOriginalTitle.value}」，确定吗？`
-      : '切换章节将清空当前画布，确定吗？'
-    if (!confirm(hint)) {
-      return
+      ? `切换章节将清空当前编辑中的「${editingOriginalTitle.value}」，是否保存为草稿？`
+      : '切换章节将清空当前画布，是否保存为草稿？'
+    if (confirm(hint)) {
+      saveCurrentDraft('chapter_switch')
+    } else {
+      clearDraft()
     }
   }
   currentChapterId.value = chapterId
@@ -375,14 +468,21 @@ const handleSelectChapter = (chapterId: string) => {
 const handleReset = () => {
   if (boardPhrases.value.length === 0) return
   const hint = isEditingComposition.value
-    ? `确定要清空当前编辑中的「${editingOriginalTitle.value}」吗？将退出编辑态。`
+    ? `确定要清空当前编辑中的「${editingOriginalTitle.value}」吗？`
     : '确定要清空画布吗？'
-  if (confirm(hint)) {
-    boardPhrases.value = []
-    snapshotStorage.value = setCurrentSnapshot(null)
-    clearEditingState()
-    pushToHistory()
+  if (!confirm(hint)) return
+  
+  const saveHint = '是否保存当前内容为草稿？'
+  if (confirm(saveHint)) {
+    saveCurrentDraft('dialog_close')
+  } else {
+    clearDraft()
   }
+  
+  boardPhrases.value = []
+  snapshotStorage.value = setCurrentSnapshot(null)
+  clearEditingState()
+  pushToHistory()
 }
 
 const handleSave = () => {
@@ -464,6 +564,7 @@ const doSaveComposition = (title: string, asNewCopy: boolean) => {
   pushToHistory()
   snapshotStorage.value = setCurrentSnapshot(null)
   clearEditingState()
+  clearDraft()
   justUnlockedChapter.value = null
 }
 
@@ -476,6 +577,15 @@ const handleSaveAsNew = (title: string) => {
 }
 
 const handleLoadComposition = (comp: Composition) => {
+  if (boardPhrases.value.length > 0) {
+    const hint = '加载作品将替换当前画布内容，是否保存当前内容为草稿？'
+    if (confirm(hint)) {
+      saveCurrentDraft('dialog_close')
+    } else {
+      clearDraft()
+    }
+  }
+  
   if (comp.chapterId !== currentChapterId.value) {
     currentChapterId.value = comp.chapterId
     gameState.value.currentChapterId = comp.chapterId
@@ -495,6 +605,7 @@ const handleLoadComposition = (comp: Composition) => {
   snapshotStorage.value = setCurrentSnapshot(null)
   setEditingComposition(comp.id, comp.title)
   showPortfolio.value = false
+  clearDraft()
 }
 
 const handleDeleteComposition = (id: string) => {
@@ -722,12 +833,23 @@ onMounted(() => {
   document.addEventListener('click', handleFirstInteraction, { once: true })
   document.addEventListener('touchstart', handleFirstInteraction, { once: true, passive: true })
   document.addEventListener('keydown', handleKeydown)
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  
+  const draft = loadDraft()
+  if (draft && draft.phrases.length > 0) {
+    pendingDraft.value = draft
+    showDraftRestoreDialog.value = true
+  }
+  
   pushToHistory()
   checkQuestUnlocks()
+  startAutoSave()
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  stopAutoSave()
 })
 
 watch(boardPhrases, () => {
@@ -901,6 +1023,31 @@ watch(boardPhrases, () => {
       @close="showCollection = false"
     />
     
+    <div v-if="showDraftRestoreDialog && pendingDraft" class="draft-restore-overlay" @click.self="discardDraft">
+      <div class="draft-restore-dialog">
+        <div class="draft-restore-header">
+          <span class="draft-restore-icon">✦</span>
+          <span class="draft-restore-title">发现未保存的草稿</span>
+        </div>
+        <div class="draft-restore-content">
+          <p class="draft-restore-text">
+            检测到上次编辑中的草稿，包含 {{ pendingDraft.phrases.length }} 个词句
+          </p>
+          <p class="draft-restore-subtext">
+            保存时间：{{ new Date(pendingDraft.savedAt).toLocaleString('zh-CN') }}
+          </p>
+        </div>
+        <div class="draft-restore-actions">
+          <button class="draft-btn draft-btn-cancel" @click="discardDraft">
+            放弃草稿
+          </button>
+          <button class="draft-btn draft-btn-confirm" @click="restoreDraft(pendingDraft)">
+            恢复草稿
+          </button>
+        </div>
+      </div>
+    </div>
+    
     <div class="bg-decoration">
       <div class="deco-line" style="top: 10%; left: 5%;"></div>
       <div class="deco-line" style="top: 30%; right: 8%; animation-delay: -2s;"></div>
@@ -1065,6 +1212,115 @@ watch(boardPhrases, () => {
 .pool-wrapper {
   flex: 1;
   min-height: 0;
+}
+
+.draft-restore-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.draft-restore-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.draft-restore-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.draft-restore-icon {
+  font-size: 24px;
+  color: var(--accent-gold);
+}
+
+.draft-restore-title {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 1px;
+}
+
+.draft-restore-content {
+  margin-bottom: 24px;
+}
+
+.draft-restore-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 8px 0;
+  line-height: 1.6;
+}
+
+.draft-restore-subtext {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.draft-restore-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.draft-btn {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  font-family: var(--font-serif);
+}
+
+.draft-btn-cancel {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.draft-btn-cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.draft-btn-confirm {
+  background: var(--accent-gold);
+  color: #1a1a2e;
+}
+
+.draft-btn-confirm:hover {
+  background: #d4b87a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(201, 168, 108, 0.3);
 }
 
 @media (max-width: 900px) {

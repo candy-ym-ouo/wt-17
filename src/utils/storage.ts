@@ -1,4 +1,4 @@
-import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState } from '@/types'
+import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase } from '@/types'
 
 const STORAGE_KEYS = {
   COMPOSITIONS: 'poem_slices_compositions',
@@ -6,6 +6,7 @@ const STORAGE_KEYS = {
   QUEST_STATE: 'poem_slices_quest_state',
   EDITING_COMPOSITION: 'poem_slices_editing_composition',
   COLLECTIONS: 'poem_slices_collections',
+  DRAFT: 'poem_slices_draft',
 }
 
 const DEFAULT_QUEST_STATE: QuestState = {
@@ -105,6 +106,9 @@ export const clearAllData = (): void => {
   localStorage.removeItem(STORAGE_KEYS.COMPOSITIONS)
   localStorage.removeItem(STORAGE_KEYS.GAME_STATE)
   localStorage.removeItem(STORAGE_KEYS.QUEST_STATE)
+  localStorage.removeItem(STORAGE_KEYS.EDITING_COMPOSITION)
+  localStorage.removeItem(STORAGE_KEYS.COLLECTIONS)
+  localStorage.removeItem(STORAGE_KEYS.DRAFT)
 }
 
 export const saveQuestState = (state: QuestState): void => {
@@ -438,4 +442,74 @@ export const togglePinComposition = (compositionId: string): boolean => {
     return newPinned
   }
   return false
+}
+
+export type DraftSource = 'auto' | 'chapter_switch' | 'dialog_close' | 'page_unload'
+
+export interface DraftState {
+  chapterId: string
+  phrases: CanvasPhrase[]
+  editingCompositionId: string | null
+  editingOriginalTitle: string | null
+  savedAt: number
+  source: DraftSource
+}
+
+const DEFAULT_DRAFT: DraftState = {
+  chapterId: '',
+  phrases: [],
+  editingCompositionId: null,
+  editingOriginalTitle: null,
+  savedAt: 0,
+  source: 'auto'
+}
+
+export const saveDraft = (draft: DraftState): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.DRAFT, JSON.stringify(draft))
+  } catch (e) {
+    console.error('Failed to save draft:', e)
+  }
+}
+
+export const loadDraft = (): DraftState | null => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.DRAFT)
+    if (!data) return null
+    const parsed = JSON.parse(data)
+    return { ...DEFAULT_DRAFT, ...parsed }
+  } catch (e) {
+    console.error('Failed to load draft:', e)
+    return null
+  }
+}
+
+export const clearDraft = (): void => {
+  localStorage.removeItem(STORAGE_KEYS.DRAFT)
+}
+
+export const hasDraft = (): boolean => {
+  const draft = loadDraft()
+  return draft !== null && draft.phrases.length > 0
+}
+
+export const createDraftFromState = (
+  chapterId: string,
+  phrases: CanvasPhrase[],
+  editingCompositionId: string | null,
+  editingOriginalTitle: string | null,
+  source: DraftSource
+): DraftState => {
+  return {
+    chapterId,
+    phrases: phrases.map(p => ({
+      ...p,
+      position: p.position ? { ...p.position } : null,
+      dragOffset: { ...p.dragOffset }
+    })),
+    editingCompositionId,
+    editingOriginalTitle,
+    savedAt: Date.now(),
+    source
+  }
 }
