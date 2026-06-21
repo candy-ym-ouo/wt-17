@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { ScoreBreakdown, DiagnosticReport, Phrase, Chapter } from '@/types'
+import type { ScoreBreakdown, DiagnosticReport, Phrase, Chapter, PhraseRarity } from '@/types'
 import { getScoreGrade, generateDiagnosticReport } from '@/utils/scoring'
+import { rarityLabels, rarityColors, rarityScoreBonus } from '@/data/phrases'
 
 interface Props {
   score: ScoreBreakdown
@@ -32,6 +33,35 @@ const bars = computed(() => {
 const hasBoosts = computed(() => {
   const boosts = props.weightBoosts || {}
   return Object.keys(boosts).length > 0
+})
+
+const rarityStats = computed(() => {
+  if (!props.phrases || props.phrases.length === 0) {
+    return {
+      distribution: {} as Record<PhraseRarity, number>,
+      avgBonus: 0,
+      hasRare: false
+    }
+  }
+  
+  const distribution: Record<PhraseRarity, number> = {
+    common: 0,
+    rare: 0,
+    epic: 0,
+    legendary: 0
+  }
+  
+  let totalBonus = 0
+  props.phrases.forEach(p => {
+    distribution[p.rarity]++
+    totalBonus += rarityScoreBonus[p.rarity] || 0
+  })
+  
+  return {
+    distribution,
+    avgBonus: totalBonus / props.phrases.length,
+    hasRare: distribution.rare > 0 || distribution.epic > 0 || distribution.legendary > 0
+  }
 })
 
 const diagnosticReport = computed<DiagnosticReport | null>(() => {
@@ -174,6 +204,24 @@ const dimensionColors: Record<string, string> = {
         <div v-if="hasBoosts" class="boost-notice">
           <span class="boost-icon">✧</span>
           <span class="boost-text">评分加成生效中</span>
+        </div>
+        
+        <div v-if="rarityStats.hasRare && phrases && phrases.length > 0" class="rarity-notice">
+          <span class="rarity-icon">◆</span>
+          <span class="rarity-text">
+            稀有度加成 +{{ Math.round(rarityStats.avgBonus * 100) }}%
+          </span>
+          <div class="rarity-mini-stats">
+            <span 
+              v-for="rar in (['legendary', 'epic', 'rare'] as PhraseRarity[])" 
+              :key="rar"
+              v-show="rarityStats.distribution[rar] > 0"
+              class="rarity-mini-item"
+              :style="{ color: rarityColors[rar] }"
+            >
+              {{ rarityLabels[rar] }}×{{ rarityStats.distribution[rar] }}
+            </span>
+          </div>
         </div>
         
         <div v-if="score.total > 0" class="score-comment">
@@ -615,6 +663,43 @@ const dimensionColors: Record<string, string> = {
   font-size: 11px;
   color: var(--accent-gold);
   letter-spacing: 1px;
+}
+
+.rarity-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: linear-gradient(90deg, rgba(168, 122, 201, 0.08), rgba(201, 168, 108, 0.06));
+  border: 1px solid rgba(168, 122, 201, 0.2);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.rarity-icon {
+  color: #a87ac9;
+  font-size: 12px;
+  margin-right: 6px;
+}
+
+.rarity-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+.rarity-mini-stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-left: 18px;
+}
+
+.rarity-mini-item {
+  font-size: 10px;
+  font-weight: 500;
 }
 
 .bar-value {

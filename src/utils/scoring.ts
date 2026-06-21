@@ -1,9 +1,10 @@
-import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory } from '@/types'
+import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity } from '@/types'
+import { rarityScoreBonus } from '@/data/phrases'
 
 const DEFAULT_WEIGHTS: ScoreWeights = {
-  coherence: 0.3,
-  imagery: 0.25,
-  rhythm: 0.2,
+  coherence: 0.25,
+  imagery: 0.2,
+  rhythm: 0.15,
   themeMatch: 0.25
 }
 
@@ -59,11 +60,12 @@ export const calculateScore = (phrases: Phrase[], chapter: Chapter, weightBoosts
   const rhythm = calcRhythm(phrases)
   const themeMatch = calcThemeMatch(phrases, chapter)
   
+  const rarityBonus = calcRarityBonus(phrases)
+  
   const weights = resolveWeights(weightBoosts || {})
   const countBonus = Math.min(phrases.length / chapter.targetPhraseCount, 1)
-  const total = Math.round(
-    (coherence * weights.coherence + imagery * weights.imagery + rhythm * weights.rhythm + themeMatch * weights.themeMatch) * 100 * countBonus
-  )
+  const baseScore = (coherence * weights.coherence + imagery * weights.imagery + rhythm * weights.rhythm + themeMatch * weights.themeMatch) * 100
+  const total = Math.round(baseScore * countBonus * (1 + rarityBonus))
 
   return {
     coherence: Math.round(coherence * 100),
@@ -72,6 +74,17 @@ export const calculateScore = (phrases: Phrase[], chapter: Chapter, weightBoosts
     themeMatch: Math.round(themeMatch * 100),
     total
   }
+}
+
+const calcRarityBonus = (phrases: Phrase[]): number => {
+  if (phrases.length === 0) return 0
+  
+  let totalBonus = 0
+  phrases.forEach(p => {
+    totalBonus += rarityScoreBonus[p.rarity] || 0
+  })
+  
+  return Math.min(totalBonus / phrases.length, 0.2)
 }
 
 const calcCoherence = (phrases: Phrase[]): number => {
@@ -122,22 +135,36 @@ const themeKeywords: Record<string, string[]> = {
   '自由': []
 }
 
+const rarityWeight: Record<PhraseRarity, number> = {
+  common: 1,
+  rare: 1.3,
+  epic: 1.6,
+  legendary: 2
+}
+
 const calcThemeMatch = (phrases: Phrase[], chapter: Chapter): number => {
   if (chapter.theme === '自由') return 0.85
   const keywords = themeKeywords[chapter.theme] || []
   if (keywords.length === 0) return 0.6
   
-  let matchCount = 0
+  let matchWeight = 0
+  let totalWeight = 0
+  
   phrases.forEach(p => {
-    if (keywords.includes(p.text)) matchCount++
+    const rWeight = rarityWeight[p.rarity] || 1
+    totalWeight += rWeight
+    if (keywords.includes(p.text)) {
+      matchWeight += rWeight
+    }
   })
   
-  const directMatch = matchCount / Math.max(phrases.length, 1)
+  const directMatch = totalWeight > 0 ? matchWeight / totalWeight : 0
+  
   const categoryMatch = phrases.filter(p => 
     p.category === 'scene' || p.category === 'imagery' || p.category === 'emotion'
   ).length / phrases.length
   
-  return Math.min(directMatch * 0.6 + categoryMatch * 0.4, 1)
+  return Math.min(directMatch * 0.65 + categoryMatch * 0.35, 1)
 }
 
 export const getScoreGrade = (total: number): { grade: string; color: string; comment: string } => {

@@ -1,4 +1,4 @@
-import type { Composition, GameState, QuestState, Phrase, Collection } from '@/types'
+import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState } from '@/types'
 
 const STORAGE_KEYS = {
   COMPOSITIONS: 'poem_slices_compositions',
@@ -14,7 +14,11 @@ const DEFAULT_QUEST_STATE: QuestState = {
   claimedRewards: [],
   earnedTitles: [],
   activeWeightBoosts: {},
-  chapterRewardPhrases: {}
+  chapterRewardPhrases: {},
+  phraseCollection: {
+    collectedPhrases: {},
+    totalCollected: 0
+  }
 }
 
 const DEFAULT_STATE: GameState = {
@@ -178,6 +182,53 @@ export const addEarnedTitle = (title: string): void => {
     state.earnedTitles.push(title)
     saveQuestState(state)
   }
+}
+
+export const collectPhrase = (phraseText: string, sourceChapterId?: string, sourceQuestId?: string): boolean => {
+  const state = loadQuestState()
+  const collection = state.phraseCollection
+  
+  if (collection.collectedPhrases[phraseText]) {
+    collection.collectedPhrases[phraseText].acquiredCount++
+    saveQuestState(state)
+    return false
+  }
+  
+  collection.collectedPhrases[phraseText] = {
+    phraseText,
+    firstAcquiredAt: Date.now(),
+    acquiredCount: 1,
+    sourceChapterId,
+    sourceQuestId
+  }
+  collection.totalCollected = Object.keys(collection.collectedPhrases).length
+  saveQuestState(state)
+  return true
+}
+
+export const collectPhrases = (phraseTexts: string[], sourceChapterId?: string): { newlyCollected: string[] } => {
+  const newlyCollected: string[] = []
+  phraseTexts.forEach(text => {
+    const isNew = collectPhrase(text, sourceChapterId)
+    if (isNew) {
+      newlyCollected.push(text)
+    }
+  })
+  return { newlyCollected }
+}
+
+export const isPhraseCollected = (phraseText: string): boolean => {
+  const state = loadQuestState()
+  return !!state.phraseCollection.collectedPhrases[phraseText]
+}
+
+export const getPhraseCollection = (): PhraseCollectionState => {
+  const state = loadQuestState()
+  return state.phraseCollection
+}
+
+export const getCollectedPhraseCount = (): number => {
+  return getPhraseCollection().totalCollected
 }
 
 export interface EditingCompositionState {

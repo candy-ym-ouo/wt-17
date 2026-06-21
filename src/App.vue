@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState } from '@/types'
 import { chapters, getChapterById } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
-import { rewardPhrases, refreshPoolByCategory, createPhrase } from '@/data/phrases'
+import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors } from '@/data/phrases'
 import { calculateScore, generatePoemTitle } from '@/utils/scoring'
 import {
   loadGameState, saveGameState, loadCompositions, saveComposition, deleteComposition,
@@ -18,7 +18,7 @@ import type { Collection } from '@/types'
 import {
   loadQuestState, saveQuestState, unlockQuest, completeQuest, claimReward,
   isQuestUnlocked, isQuestCompleted, isRewardClaimed, addWeightBoost,
-  addChapterRewardPhrase, addEarnedTitle
+  addChapterRewardPhrase, addEarnedTitle, collectPhrase, collectPhrases, getPhraseCollection
 } from '@/utils/storage'
 import {
   createHistoryManager, createCanvasState, createSnapshot,
@@ -204,7 +204,9 @@ const score = computed<ScoreBreakdown>((): ScoreBreakdown => {
     position: p.position,
     rotation: p.rotation,
     isPlaced: p.isPlaced,
-    weight: p.weight
+    weight: p.weight,
+    rarity: p.rarity,
+    source: p.source
   }))
   return calculateScore(phrases, currentChapter.value, questState.value.activeWeightBoosts)
 })
@@ -217,7 +219,9 @@ const poemTitle = computed(() => {
     position: p.position,
     rotation: p.rotation,
     isPlaced: p.isPlaced,
-    weight: p.weight
+    weight: p.weight,
+    rarity: p.rarity,
+    source: p.source
   }))
   return generatePoemTitle(phrases)
 })
@@ -255,6 +259,21 @@ const enhancedChapterPhrases = computed((): Phrase[] => {
   if (!ch) return []
   const rewardPhrases = questState.value.chapterRewardPhrases[currentChapterId.value] || []
   return [...ch.phrases, ...rewardPhrases]
+})
+
+const collectedPhraseTexts = computed((): Set<string> => {
+  const collected = questState.value.phraseCollection.collectedPhrases
+  return new Set(Object.keys(collected))
+})
+
+const totalPhraseCount = computed((): number => {
+  const basePhrases = getAllPhrases().length
+  const rewardPhraseCount = Object.keys(rewardPhrases).length
+  return basePhrases + rewardPhraseCount
+})
+
+const collectionProgress = computed((): number => {
+  return questState.value.phraseCollection.totalCollected
 })
 
 const handlePhraseSelect = (phrase: Phrase) => {
@@ -338,7 +357,9 @@ const doSaveComposition = (title: string, asNewCopy: boolean) => {
     position: p.position,
     rotation: p.rotation,
     isPlaced: p.isPlaced,
-    weight: p.weight
+    weight: p.weight,
+    rarity: p.rarity,
+    source: p.source
   }))
 
   const now = Date.now()
@@ -372,6 +393,10 @@ const doSaveComposition = (title: string, asNewCopy: boolean) => {
   saveComposition(composition)
   compositions.value = loadCompositions()
   musicPlayer.playSuccessSound()
+
+  const phraseTexts = phrases.map(p => p.text)
+  const { newlyCollected } = collectPhrases(phraseTexts, currentChapterId.value)
+  questState.value = loadQuestState()
 
   if (currentChapter.value && score.value.total >= 60) {
     const currentIndex = chapters.findIndex(ch => ch.id === currentChapterId.value)
@@ -545,7 +570,8 @@ const checkQuestUnlocks = () => {
     boardPhrases: boardPhrases.value.map(p => ({
       id: p.id, text: p.text, category: p.category,
       position: p.position, rotation: p.rotation,
-      isPlaced: p.isPlaced, weight: p.weight
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
     })),
     chapterId: currentChapterId.value,
     score: score.value,
@@ -568,7 +594,8 @@ const checkQuestCompletion = () => {
     boardPhrases: boardPhrases.value.map(p => ({
       id: p.id, text: p.text, category: p.category,
       position: p.position, rotation: p.rotation,
-      isPlaced: p.isPlaced, weight: p.weight
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
     })),
     chapterId: currentChapterId.value,
     score: score.value,
@@ -596,10 +623,10 @@ const handleClaimReward = (questId: string) => {
         const texts = reward.params.phraseTexts as string[]
         const targetChapter = quest.chapterId
         texts.forEach(text => {
-          const rp = rewardPhrases[text]
-          if (rp) {
-            const phrase = createPhrase(rp.text, rp.category, rp.weight)
+          const phrase = createRewardPhrase(text)
+          if (phrase) {
             addChapterRewardPhrase(targetChapter, phrase)
+            collectPhrase(text, targetChapter, questId)
           }
         })
         break
@@ -725,7 +752,9 @@ watch(boardPhrases, () => {
               position: p.position,
               rotation: p.rotation,
               isPlaced: p.isPlaced,
-              weight: p.weight
+              weight: p.weight,
+              rarity: p.rarity,
+              source: p.source
             }))"
             :chapter="currentChapter"
           />
@@ -733,7 +762,12 @@ watch(boardPhrases, () => {
         
         <div class="panel-section pool-section">
           <div class="section-header">
-            <span class="section-title">词句池</span>
+            <div class="section-title-row">
+              <span class="section-title">词句池</span>
+              <span class="collection-badge" title="已收藏词句数">
+                ✦ {{ collectionProgress }} / {{ totalPhraseCount }}
+              </span>
+            </div>
             <span class="section-count">
               {{ (enhancedChapterPhrases.length) - boardPhrases.length }}
               /
@@ -744,6 +778,7 @@ watch(boardPhrases, () => {
             <PhrasePool
               :phrases="enhancedChapterPhrases"
               :placedPhraseIds="placedPhraseIds"
+              :collectedPhrases="collectedPhraseTexts"
               @select="handlePhraseSelect"
             />
           </div>
@@ -934,6 +969,22 @@ watch(boardPhrases, () => {
   justify-content: space-between;
   align-items: center;
   padding: 0 4px 10px;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.collection-badge {
+  font-size: 11px;
+  color: var(--accent-gold);
+  background: rgba(201, 168, 108, 0.1);
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(201, 168, 108, 0.2);
+  font-weight: 500;
 }
 
 .section-title {

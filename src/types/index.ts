@@ -1,3 +1,15 @@
+export type PhraseRarity = 'common' | 'rare' | 'epic' | 'legendary'
+
+export type PhraseSourceType = 'chapter' | 'quest' | 'event' | 'reward' | 'initial'
+
+export interface PhraseSource {
+  type: PhraseSourceType
+  chapterId?: string
+  questId?: string
+  eventId?: string
+  description?: string
+}
+
 export interface Phrase {
   id: string
   text: string
@@ -6,6 +18,8 @@ export interface Phrase {
   rotation: number
   isPlaced: boolean
   weight: number
+  rarity: PhraseRarity
+  source: PhraseSource
 }
 
 export type PhraseCategory = 
@@ -180,6 +194,19 @@ export interface SideQuest {
   accentColor: string
 }
 
+export interface PhraseCollectionRecord {
+  phraseText: string
+  firstAcquiredAt: number
+  acquiredCount: number
+  sourceChapterId?: string
+  sourceQuestId?: string
+}
+
+export interface PhraseCollectionState {
+  collectedPhrases: Record<string, PhraseCollectionRecord>
+  totalCollected: number
+}
+
 export interface QuestState {
   unlockedQuests: string[]
   completedQuests: string[]
@@ -187,6 +214,7 @@ export interface QuestState {
   earnedTitles: string[]
   activeWeightBoosts: Record<string, number>
   chapterRewardPhrases: Record<string, Phrase[]>
+  phraseCollection: PhraseCollectionState
 }
 
 export interface ScoreWeights {
