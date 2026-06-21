@@ -663,6 +663,16 @@ watch(boardPhrases, () => {
             :phrasesCount="boardPhrases.length"
             :targetCount="currentChapter?.targetPhraseCount || 5"
             :weightBoosts="questState.activeWeightBoosts"
+            :phrases="boardPhrases.map(p => ({
+              id: p.id,
+              text: p.text,
+              category: p.category,
+              position: p.position,
+              rotation: p.rotation,
+              isPlaced: p.isPlaced,
+              weight: p.weight
+            }))"
+            :chapter="currentChapter"
           />
         </div>
         

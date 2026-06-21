@@ -37,6 +37,56 @@ export interface ScoreBreakdown {
   total: number
 }
 
+export interface ScoreLoss {
+  dimension: 'coherence' | 'imagery' | 'rhythm' | 'themeMatch'
+  dimensionLabel: string
+  lossPoints: number
+  reasons: string[]
+  severity: 'high' | 'medium' | 'low'
+}
+
+export interface ThemeDeviation {
+  isDeviated: boolean
+  deviationDegree: number
+  currentKeywords: string[]
+  missingKeywords: string[]
+  suggestion: string
+}
+
+export interface CategoryBalance {
+  category: PhraseCategory
+  label: string
+  count: number
+  percentage: number
+  idealPercentage: number
+  status: 'balanced' | 'excess' | 'deficit'
+}
+
+export interface WordClassImbalance {
+  isImbalanced: boolean
+  balances: CategoryBalance[]
+  dominantCategories: PhraseCategory[]
+  missingCategories: PhraseCategory[]
+  suggestion: string
+}
+
+export interface RevisionStep {
+  order: number
+  title: string
+  description: string
+  action: string
+  priority: 'critical' | 'important' | 'enhancement'
+  dimension?: 'coherence' | 'imagery' | 'rhythm' | 'themeMatch'
+}
+
+export interface DiagnosticReport {
+  scoreLosses: ScoreLoss[]
+  themeDeviation: ThemeDeviation
+  wordClassImbalance: WordClassImbalance
+  revisionPath: RevisionStep[]
+  overallSuggestion: string
+}
+
 export interface Composition {
   id: string
   chapterId: string
