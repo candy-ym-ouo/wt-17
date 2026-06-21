@@ -528,6 +528,8 @@ const handleToggleMusic = () => {
   saveGameState({ musicEnabled: gameState.value.musicEnabled })
   if (gameState.value.musicEnabled) {
     musicPlayer.init()
+    musicPlayer.setVolume(gameState.value.musicVolume)
+    musicPlayer.switchChapter(currentChapterId.value)
     musicPlayer.play()
   } else {
     musicPlayer.stop()
