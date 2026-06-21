@@ -41,18 +41,32 @@ const trajectoryItems = computed(() => {
     const isCompleted = bestScore >= 60
     const isCurrent = ch.id === props.currentId
     const chapterQuests = props.sideQuests.filter(q => q.chapterId === ch.id)
-    const completedQuests = chapterQuests.filter(q => props.questState.completedQuests.includes(q.id))
-    const hasUnclaimed = chapterQuests.some(q =>
+    const unlockedChapterQuests = chapterQuests.filter(q => props.questState.unlockedQuests.includes(q.id))
+    const completedQuests = unlockedChapterQuests.filter(q => props.questState.completedQuests.includes(q.id))
+    const pendingQuests = unlockedChapterQuests.filter(q => !props.questState.claimedRewards.includes(q.id))
+    const hasUnclaimed = unlockedChapterQuests.some(q =>
       props.questState.completedQuests.includes(q.id) && !props.questState.claimedRewards.includes(q.id)
     )
     const rewardPhrases: string[] = []
-    chapterQuests.forEach(q => {
+    const seenPhrases = new Set<string>()
+    pendingQuests.forEach(q => {
       q.rewards.forEach(r => {
         if (r.type === 'phrase_unlock' && r.params.phraseTexts) {
-          rewardPhrases.push(...(r.params.phraseTexts as string[]))
+          (r.params.phraseTexts as string[]).forEach(text => {
+            if (!seenPhrases.has(text)) {
+              seenPhrases.add(text)
+              rewardPhrases.push(text)
+            }
+          })
         }
       })
     })
+    const lockedQuestCount = chapterQuests.length - unlockedChapterQuests.length
+    const lockedRewardCount = chapterQuests
+      .filter(q => !props.questState.unlockedQuests.includes(q.id))
+      .reduce((sum, q) => {
+        return sum + q.rewards.filter(r => r.type === 'phrase_unlock').length
+      }, 0)
 
     return {
       chapter: ch,
@@ -64,10 +78,13 @@ const trajectoryItems = computed(() => {
       starRating,
       compositionCount: progress?.compositionCount || 0,
       completedQuestCount: completedQuests.length,
+      unlockedQuestCount: unlockedChapterQuests.length,
       totalQuestCount: chapterQuests.length,
       hasUnclaimed,
       rewardPhrases: rewardPhrases.slice(0, 4),
-      totalRewardCount: rewardPhrases.length
+      totalRewardCount: rewardPhrases.length,
+      lockedQuestCount,
+      lockedRewardCount
     }
   })
 })
@@ -182,16 +199,20 @@ const overallStats = computed(() => {
               <span class="card-theme" :style="{ color: item.chapter.accentColor }">#{{ item.chapter.theme }}</span>
               <div class="card-quests" v-if="item.totalQuestCount > 0">
                 <span class="quest-progress" :class="{ unclaimed: item.hasUnclaimed }">
-                  {{ item.completedQuestCount }}/{{ item.totalQuestCount }} 支线
+                  {{ item.completedQuestCount }}/{{ item.unlockedQuestCount }} 支线
+                  <span v-if="item.lockedQuestCount > 0" class="quest-locked">+{{ item.lockedQuestCount }} 未解锁</span>
                 </span>
               </div>
             </div>
 
-            <div v-if="item.rewardPhrases.length > 0 && item.isUnlocked" class="card-rewards">
+            <div v-if="(item.rewardPhrases.length > 0 || item.lockedRewardCount > 0) && item.isUnlocked" class="card-rewards">
               <span class="rewards-label">可得</span>
               <div class="rewards-tags">
                 <span v-for="rp in item.rewardPhrases" :key="rp" class="reward-tag">{{ rp }}</span>
                 <span v-if="item.totalRewardCount > 4" class="reward-more">+{{ item.totalRewardCount - 4 }}</span>
+                <span v-if="item.lockedRewardCount > 0 && item.rewardPhrases.length === 0" class="reward-tag locked">支线解锁后可见</span>
+                <span v-else-if="item.lockedRewardCount > 0" class="reward-more locked">+{{ item.lockedRewardCount }} 待解锁</span>
+                <span v-if="item.rewardPhrases.length === 0 && item.lockedRewardCount === 0" class="reward-tag claimed">全部奖励已领取</span>
               </div>
             </div>
           </div>
@@ -568,6 +589,13 @@ const overallStats = computed(() => {
   border: 1px solid rgba(201, 168, 108, 0.2);
 }
 
+.quest-locked {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-left: 4px;
+  opacity: 0.8;
+}
+
 .card-rewards {
   display: flex;
   align-items: flex-start;
@@ -600,10 +628,27 @@ const overallStats = computed(() => {
   font-family: var(--font-serif);
 }
 
+.reward-tag.locked {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.reward-tag.claimed {
+  color: #6b8e6b;
+  background: rgba(107, 142, 107, 0.08);
+  border-color: rgba(107, 142, 107, 0.2);
+}
+
 .reward-more {
   font-size: 10px;
   color: var(--text-muted);
   padding: 2px 6px;
+}
+
+.reward-more.locked {
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 @keyframes fadeIn {
