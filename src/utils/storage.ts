@@ -1,8 +1,18 @@
-import type { Composition, GameState } from '@/types'
+import type { Composition, GameState, QuestState } from '@/types'
 
 const STORAGE_KEYS = {
   COMPOSITIONS: 'poem_slices_compositions',
   GAME_STATE: 'poem_slices_game_state',
+  QUEST_STATE: 'poem_slices_quest_state',
+}
+
+const DEFAULT_QUEST_STATE: QuestState = {
+  unlockedQuests: [],
+  completedQuests: [],
+  claimedRewards: [],
+  earnedTitles: [],
+  activeWeightBoosts: {},
+  unlockedRewardPhraseIds: []
 }
 
 const DEFAULT_STATE: GameState = {
@@ -88,4 +98,81 @@ export const isChapterUnlocked = (chapterId: string): boolean => {
 export const clearAllData = (): void => {
   localStorage.removeItem(STORAGE_KEYS.COMPOSITIONS)
   localStorage.removeItem(STORAGE_KEYS.GAME_STATE)
+  localStorage.removeItem(STORAGE_KEYS.QUEST_STATE)
+}
+
+export const saveQuestState = (state: QuestState): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.QUEST_STATE, JSON.stringify(state))
+  } catch (e) {
+    console.error('Failed to save quest state:', e)
+  }
+}
+
+export const loadQuestState = (): QuestState => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.QUEST_STATE)
+    return data ? { ...DEFAULT_QUEST_STATE, ...JSON.parse(data) } : DEFAULT_QUEST_STATE
+  } catch (e) {
+    console.error('Failed to load quest state:', e)
+    return DEFAULT_QUEST_STATE
+  }
+}
+
+export const unlockQuest = (questId: string): void => {
+  const state = loadQuestState()
+  if (!state.unlockedQuests.includes(questId)) {
+    state.unlockedQuests.push(questId)
+    saveQuestState(state)
+  }
+}
+
+export const completeQuest = (questId: string): void => {
+  const state = loadQuestState()
+  if (!state.completedQuests.includes(questId)) {
+    state.completedQuests.push(questId)
+    saveQuestState(state)
+  }
+}
+
+export const claimReward = (questId: string): void => {
+  const state = loadQuestState()
+  if (!state.claimedRewards.includes(questId)) {
+    state.claimedRewards.push(questId)
+    saveQuestState(state)
+  }
+}
+
+export const isQuestUnlocked = (questId: string): boolean => {
+  return loadQuestState().unlockedQuests.includes(questId)
+}
+
+export const isQuestCompleted = (questId: string): boolean => {
+  return loadQuestState().completedQuests.includes(questId)
+}
+
+export const isRewardClaimed = (questId: string): boolean => {
+  return loadQuestState().claimedRewards.includes(questId)
+}
+
+export const addWeightBoost = (dimension: string, boost: number): void => {
+  const state = loadQuestState()
+  state.activeWeightBoosts[dimension] = (state.activeWeightBoosts[dimension] || 0) + boost
+  saveQuestState(state)
+}
+
+export const addRewardPhraseId = (phraseId: string): void => {
+  const state = loadQuestState()
+  if (!state.unlockedRewardPhraseIds.includes(phraseId)) {
+    state.unlockedRewardPhraseIds.push(phraseId)
+    saveQuestState(state)
+  }
+}
+
+export const addEarnedTitle = (title: string): void => {
+  const state = loadQuestState()
+  if (!state.earnedTitles.includes(title)) {
+    state.earnedTitles.push(title)
+    saveQuestState(state)
+  }
 }

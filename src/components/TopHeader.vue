@@ -5,6 +5,7 @@ interface Props {
   chapter: Chapter | null
   musicEnabled: boolean
   musicVolume: number
+  questCount: number
 }
 
 defineProps<Props>()
@@ -13,6 +14,7 @@ const emit = defineEmits<{
   (e: 'changeVolume', vol: number): void
   (e: 'openChapters'): void
   (e: 'openPortfolio'): void
+  (e: 'openQuests'): void
   (e: 'save'): void
   (e: 'reset'): void
 }>()
@@ -54,6 +56,10 @@ const emit = defineEmits<{
       </button>
       <button class="icon-btn" @click="emit('openPortfolio')" title="作品集">
         📜
+      </button>
+      <button class="icon-btn quest-btn" :class="{ 'has-quest': questCount > 0 }" @click="emit('openQuests')" title="支线任务">
+        🏮
+        <span v-if="questCount > 0" class="quest-badge">{{ questCount }}</span>
       </button>
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺
@@ -195,6 +201,32 @@ const emit = defineEmits<{
 .icon-btn.active {
   color: var(--accent-gold);
   background: rgba(201, 168, 108, 0.1);
+}
+
+.quest-btn {
+  position: relative;
+}
+
+.quest-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--accent-red);
+  color: #e8e4d9;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.quest-btn.has-quest {
+  color: var(--accent-gold);
 }
 
 .save-btn {

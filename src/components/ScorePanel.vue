@@ -7,18 +7,27 @@ interface Props {
   score: ScoreBreakdown
   phrasesCount: number
   targetCount: number
+  weightBoosts?: Record<string, number>
 }
 
 const props = defineProps<Props>()
 
 const grade = computed(() => getScoreGrade(props.score.total))
 
-const bars = computed(() => [
-  { label: '连贯性', value: props.score.coherence, color: '#5b7a8c' },
-  { label: '意象', value: props.score.imagery, color: '#7a5b8c' },
-  { label: '韵律', value: props.score.rhythm, color: '#c9a86c' },
-  { label: '契合', value: props.score.themeMatch, color: '#8b4557' },
-])
+const bars = computed(() => {
+  const boosts = props.weightBoosts || {}
+  return [
+    { label: '连贯性', value: props.score.coherence, color: '#5b7a8c', boost: boosts.coherence || 0 },
+    { label: '意象', value: props.score.imagery, color: '#7a5b8c', boost: boosts.imagery || 0 },
+    { label: '韵律', value: props.score.rhythm, color: '#c9a86c', boost: boosts.rhythm || 0 },
+    { label: '契合', value: props.score.themeMatch, color: '#8b4557', boost: boosts.themeMatch || 0 },
+  ]
+})
+
+const hasBoosts = computed(() => {
+  const boosts = props.weightBoosts || {}
+  return Object.keys(boosts).length > 0
+})
 </script>
 
 <template>
@@ -51,7 +60,12 @@ const bars = computed(() => [
     <div class="score-bars">
       <div v-for="bar in bars" :key="bar.label" class="score-bar-item">
         <div class="bar-label">
-          <span class="bar-name">{{ bar.label }}</span>
+          <span class="bar-name">
+            {{ bar.label }}
+            <span v-if="bar.boost > 0" class="bar-boost" :style="{ color: bar.color }">
+              +{{ Math.round(bar.boost * 100) }}%
+            </span>
+          </span>
           <span class="bar-value" :style="{ color: bar.color }">{{ bar.value }}</span>
         </div>
         <div class="bar-track">
@@ -61,6 +75,11 @@ const bars = computed(() => [
           ></div>
         </div>
       </div>
+    </div>
+    
+    <div v-if="hasBoosts" class="boost-notice">
+      <span class="boost-icon">✧</span>
+      <span class="boost-text">评分加成生效中</span>
     </div>
     
     <div v-if="score.total > 0" class="score-comment">
@@ -160,6 +179,34 @@ const bars = computed(() => [
 
 .bar-name {
   color: var(--text-secondary);
+}
+
+.bar-boost {
+  font-size: 10px;
+  margin-left: 4px;
+  font-weight: 500;
+}
+
+.boost-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  background: linear-gradient(90deg, rgba(201, 168, 108, 0.08), rgba(201, 168, 108, 0.04));
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.boost-icon {
+  color: var(--accent-gold);
+  font-size: 12px;
+}
+
+.boost-text {
+  font-size: 11px;
+  color: var(--accent-gold);
+  letter-spacing: 1px;
 }
 
 .bar-value {

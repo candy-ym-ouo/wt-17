@@ -92,6 +92,29 @@ export const imageryPhrases: Phrase[] = [
   createPhrase('西风', 'imagery', 2),
 ]
 
+export const rewardPhrases: Record<string, { text: string; category: PhraseCategory; weight: number }> = {
+  '花间一壶酒': { text: '花间一壶酒', category: 'scene', weight: 3 },
+  '对影三人': { text: '对影三人', category: 'imagery', weight: 3 },
+  '断肠人在天涯': { text: '断肠人在天涯', category: 'emotion', weight: 3 },
+  '瘦马': { text: '瘦马', category: 'imagery', weight: 2 },
+  '霜降': { text: '霜降', category: 'time', weight: 2 },
+  '暮秋': { text: '暮秋', category: 'time', weight: 2 },
+  '柴门': { text: '柴门', category: 'scene', weight: 2 },
+  '犬吠': { text: '犬吠', category: 'action', weight: 2 },
+  '蓦然回首': { text: '蓦然回首', category: 'action', weight: 3 },
+  '那人却在': { text: '那人却在', category: 'imagery', weight: 3 },
+  '五十弦': { text: '五十弦', category: 'imagery', weight: 2 },
+  '一弦一柱': { text: '一弦一柱', category: 'imagery', weight: 2 },
+  '大道至简': { text: '大道至简', category: 'imagery', weight: 3 },
+  '大象无形': { text: '大象无形', category: 'scene', weight: 3 },
+}
+
+export const refreshPoolByCategory = (category: PhraseCategory, count: number): Phrase[] => {
+  const allOfCategory = getAllPhrases().filter(p => p.category === category)
+  const shuffled = [...allOfCategory].sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, count)
+}
+
 export const getAllPhrases = (): Phrase[] => [
   ...scenePhrases,
   ...emotionPhrases,

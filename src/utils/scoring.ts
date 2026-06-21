@@ -1,4 +1,28 @@
-import type { Phrase, ScoreBreakdown, Chapter } from '@/types'
+import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights } from '@/types'
+
+const DEFAULT_WEIGHTS: ScoreWeights = {
+  coherence: 0.3,
+  imagery: 0.25,
+  rhythm: 0.2,
+  themeMatch: 0.25
+}
+
+export const resolveWeights = (boosts: Record<string, number>): ScoreWeights => {
+  const w = { ...DEFAULT_WEIGHTS }
+  for (const [dim, boost] of Object.entries(boosts)) {
+    if (dim in w) {
+      (w as any)[dim] += boost
+    }
+  }
+  const total = w.coherence + w.imagery + w.rhythm + w.themeMatch
+  if (total > 0) {
+    w.coherence /= total
+    w.imagery /= total
+    w.rhythm /= total
+    w.themeMatch /= total
+  }
+  return w
+}
 
 const categoryRelations: Record<string, number> = {
   'scene-scene': 0.7,
@@ -25,7 +49,7 @@ const getCategoryRelation = (c1: string, c2: string): number => {
 
 const characterCounts = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
 
-export const calculateScore = (phrases: Phrase[], chapter: Chapter): ScoreBreakdown => {
+export const calculateScore = (phrases: Phrase[], chapter: Chapter, weightBoosts?: Record<string, number>): ScoreBreakdown => {
   if (phrases.length === 0) {
     return { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 }
   }
@@ -35,9 +59,10 @@ export const calculateScore = (phrases: Phrase[], chapter: Chapter): ScoreBreakd
   const rhythm = calcRhythm(phrases)
   const themeMatch = calcThemeMatch(phrases, chapter)
   
+  const weights = resolveWeights(weightBoosts || {})
   const countBonus = Math.min(phrases.length / chapter.targetPhraseCount, 1)
   const total = Math.round(
-    (coherence * 0.3 + imagery * 0.25 + rhythm * 0.2 + themeMatch * 0.25) * 100 * countBonus
+    (coherence * weights.coherence + imagery * weights.imagery + rhythm * weights.rhythm + themeMatch * weights.themeMatch) * 100 * countBonus
   )
 
   return {

@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, ScoreBreakdown, Composition, GameState } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition } from '@/types'
 import { chapters, getChapterById } from '@/data/chapters'
+import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
+import { rewardPhrases, refreshPoolByCategory, createPhrase } from '@/data/phrases'
 import { calculateScore, generatePoemTitle } from '@/utils/scoring'
 import {
   loadGameState, saveGameState, loadCompositions, saveComposition, deleteComposition,
   unlockChapter, isChapterUnlocked
+} from '@/utils/storage'
+import {
+  loadQuestState, saveQuestState, unlockQuest, completeQuest, claimReward,
+  isQuestUnlocked, isQuestCompleted, isRewardClaimed, addWeightBoost,
+  addRewardPhraseId, addEarnedTitle
 } from '@/utils/storage'
 import { musicPlayer } from '@/utils/music'
 
@@ -16,6 +23,7 @@ import ScorePanel from '@/components/ScorePanel.vue'
 import ChapterSelect from '@/components/ChapterSelect.vue'
 import Portfolio from '@/components/Portfolio.vue'
 import SaveDialog from '@/components/SaveDialog.vue'
+import SideQuestPanel from '@/components/SideQuestPanel.vue'
 
 const gameState = ref<GameState>(loadGameState())
 
@@ -26,7 +34,10 @@ const compositions = ref<Composition[]>(loadCompositions())
 const showChapters = ref(false)
 const showPortfolio = ref(false)
 const showSaveDialog = ref(false)
+const showQuestPanel = ref(false)
 const justUnlockedChapter = ref<string | null>(null)
+const questState = ref<QuestState>(loadQuestState())
+const rewardPhrasesList = ref<Phrase[]>([])
 
 const canvasBoardRef = ref<InstanceType<typeof CanvasBoard> | null>(null)
 
@@ -50,7 +61,7 @@ const score = computed<ScoreBreakdown>((): ScoreBreakdown => {
     isPlaced: p.isPlaced,
     weight: p.weight
   }))
-  return calculateScore(phrases, currentChapter.value)
+  return calculateScore(phrases, currentChapter.value, questState.value.activeWeightBoosts)
 })
 
 const poemTitle = computed(() => {
@@ -82,6 +93,22 @@ const chaptersTitles = computed(() => {
     map[ch.id] = { title: ch.title, accent: ch.accentColor }
   })
   return map
+})
+
+const currentChapterQuests = computed(() => {
+  return getQuestsByChapter(currentChapterId.value)
+})
+
+const availableQuestCount = computed(() => {
+  const unlocked = sideQuests.filter(q => questState.value.unlockedQuests.includes(q.id))
+  const unclaimed = unlocked.filter(q => !questState.value.claimedRewards.includes(q.id))
+  return unclaimed.length
+})
+
+const enhancedChapterPhrases = computed((): Phrase[] => {
+  const ch = currentChapter.value
+  if (!ch) return []
+  return [...ch.phrases, ...rewardPhrasesList.value]
 })
 
 const handlePhraseSelect = (phrase: Phrase) => {
@@ -140,17 +167,6 @@ const handleSave = () => {
     return
   }
   showSaveDialog.value = true
-  
-  if (currentChapter.value && score.value.total >= 60) {
-    const currentIndex = chapters.findIndex(ch => ch.id === currentChapterId.value)
-    if (currentIndex >= 0 && currentIndex < chapters.length - 1) {
-      const nextChapter = chapters[currentIndex + 1]
-      if (!isChapterUnlocked(nextChapter.id)) {
-        unlockChapter(nextChapter.id)
-        justUnlockedChapter.value = nextChapter.title
-      }
-    }
-  }
 }
 
 const handleConfirmSave = (title: string) => {
@@ -180,6 +196,20 @@ const handleConfirmSave = (title: string) => {
   saveComposition(composition)
   compositions.value = loadCompositions()
   musicPlayer.playSuccessSound()
+  
+  if (currentChapter.value && score.value.total >= 60) {
+    const currentIndex = chapters.findIndex(ch => ch.id === currentChapterId.value)
+    if (currentIndex >= 0 && currentIndex < chapters.length - 1) {
+      const nextChapter = chapters[currentIndex + 1]
+      if (!isChapterUnlocked(nextChapter.id)) {
+        unlockChapter(nextChapter.id)
+        justUnlockedChapter.value = nextChapter.title
+      }
+    }
+  }
+
+  checkQuestUnlocks()
+  checkQuestCompletion()
   
   showSaveDialog.value = false
   boardPhrases.value = []
@@ -224,6 +254,129 @@ const handleNextChapter = () => {
   justUnlockedChapter.value = null
 }
 
+const checkCondition = (condition: QuestCondition, ctx: { compositions: Composition[]; boardPhrases: Phrase[]; chapterId: string; score: ScoreBreakdown; unlockedChapterCount: number }): boolean => {
+  const { type, params } = condition
+  switch (type) {
+    case 'score_threshold': {
+      const targetChapter = params.chapterId as string
+      if (targetChapter === ctx.chapterId) {
+        return ctx.score.total >= (params.minScore as number)
+      }
+      const chapterComps = ctx.compositions.filter(c => c.chapterId === targetChapter)
+      return chapterComps.some(c => c.score.total >= (params.minScore as number))
+    }
+    case 'phrase_combo': {
+      const texts = params.texts as string[]
+      const boardTexts = new Set(ctx.boardPhrases.map(p => p.text))
+      return texts.every(t => boardTexts.has(t))
+    }
+    case 'composition_count': {
+      const targetChapter = params.chapterId as string
+      if (targetChapter === '__all__') {
+        return ctx.compositions.length >= (params.minCount as number)
+      }
+      const chapterComps = ctx.compositions.filter(c => c.chapterId === targetChapter)
+      return chapterComps.length >= (params.minCount as number)
+    }
+    case 'chapter_count': {
+      return ctx.unlockedChapterCount >= (params.minCount as number)
+    }
+    case 'category_diversity': {
+      const categories = new Set(ctx.boardPhrases.map(p => p.category))
+      return categories.size >= (params.minCategories as number)
+    }
+    default:
+      return false
+  }
+}
+
+const checkQuestUnlocks = () => {
+  const ctx = {
+    compositions: compositions.value,
+    boardPhrases: boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight
+    })),
+    chapterId: currentChapterId.value,
+    score: score.value,
+    unlockedChapterCount: unlockedChapterIds.value.length
+  }
+
+  sideQuests.forEach(quest => {
+    if (questState.value.unlockedQuests.includes(quest.id)) return
+    const allMet = quest.unlockConditions.every(c => checkCondition(c, ctx))
+    if (allMet) {
+      unlockQuest(quest.id)
+      questState.value = loadQuestState()
+    }
+  })
+}
+
+const checkQuestCompletion = () => {
+  const ctx = {
+    compositions: compositions.value,
+    boardPhrases: boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight
+    })),
+    chapterId: currentChapterId.value,
+    score: score.value,
+    unlockedChapterCount: unlockedChapterIds.value.length
+  }
+
+  sideQuests.forEach(quest => {
+    if (!questState.value.unlockedQuests.includes(quest.id)) return
+    if (questState.value.completedQuests.includes(quest.id)) return
+    const allMet = quest.completeConditions.every(c => checkCondition(c, ctx))
+    if (allMet) {
+      completeQuest(quest.id)
+      questState.value = loadQuestState()
+    }
+  })
+}
+
+const handleClaimReward = (questId: string) => {
+  const quest = getQuestById(questId)
+  if (!quest || questState.value.claimedRewards.includes(questId)) return
+
+  quest.rewards.forEach(reward => {
+    switch (reward.type) {
+      case 'phrase_unlock': {
+        const texts = reward.params.phraseTexts as string[]
+        texts.forEach(text => {
+          const rp = rewardPhrases[text]
+          if (rp) {
+            const phrase = createPhrase(rp.text, rp.category, rp.weight)
+            rewardPhrasesList.value.push(phrase)
+            addRewardPhraseId(phrase.id)
+          }
+        })
+        break
+      }
+      case 'phrase_pool_refresh': {
+        const category = reward.params.addCategory as any
+        const count = reward.params.count as number
+        const refreshed = refreshPoolByCategory(category, count)
+        rewardPhrasesList.value.push(...refreshed)
+        break
+      }
+      case 'score_weight_boost': {
+        addWeightBoost(reward.params.dimension as string, reward.params.boost as number)
+        break
+      }
+      case 'title_reward': {
+        addEarnedTitle(reward.params.title as string)
+        break
+      }
+    }
+  })
+
+  claimReward(questId)
+  questState.value = loadQuestState()
+}
+
 const handleFirstInteraction = () => {
   if (gameState.value.musicEnabled) {
     musicPlayer.init()
@@ -235,7 +388,13 @@ const handleFirstInteraction = () => {
 onMounted(() => {
   document.addEventListener('click', handleFirstInteraction, { once: true })
   document.addEventListener('touchstart', handleFirstInteraction, { once: true, passive: true })
+  checkQuestUnlocks()
 })
+
+watch(boardPhrases, () => {
+  checkQuestUnlocks()
+  checkQuestCompletion()
+}, { deep: true })
 </script>
 
 <template>
@@ -244,10 +403,12 @@ onMounted(() => {
       :chapter="currentChapter"
       :musicEnabled="gameState.musicEnabled"
       :musicVolume="gameState.musicVolume"
+      :questCount="availableQuestCount"
       @toggleMusic="handleToggleMusic"
       @changeVolume="handleChangeVolume"
       @openChapters="showChapters = true"
       @openPortfolio="showPortfolio = true"
+      @openQuests="showQuestPanel = true"
       @save="handleSave"
       @reset="handleReset"
     />
@@ -264,7 +425,7 @@ onMounted(() => {
         <div class="board-wrapper">
           <CanvasBoard
             ref="canvasBoardRef"
-            :phrases="currentChapter?.phrases || []"
+            :phrases="enhancedChapterPhrases"
             :boardPhrases="boardPhrases"
             :accentColor="currentChapter?.accentColor || '#c9a86c'"
             @update:boardPhrases="handleBoardPhrasesUpdate"
@@ -279,6 +440,7 @@ onMounted(() => {
             :score="score"
             :phrasesCount="boardPhrases.length"
             :targetCount="currentChapter?.targetPhraseCount || 5"
+            :weightBoosts="questState.activeWeightBoosts"
           />
         </div>
         
@@ -286,14 +448,14 @@ onMounted(() => {
           <div class="section-header">
             <span class="section-title">词句池</span>
             <span class="section-count">
-              {{ (currentChapter?.phrases.length || 0) - boardPhrases.length }}
+              {{ (enhancedChapterPhrases.length) - boardPhrases.length }}
               /
-              {{ currentChapter?.phrases.length || 0 }}
+              {{ enhancedChapterPhrases.length }}
             </span>
           </div>
           <div class="pool-wrapper">
             <PhrasePool
-              :phrases="currentChapter?.phrases || []"
+              :phrases="enhancedChapterPhrases"
               :placedPhraseIds="placedPhraseIds"
               @select="handlePhraseSelect"
             />
@@ -329,6 +491,15 @@ onMounted(() => {
       @confirm="handleConfirmSave"
       @cancel="showSaveDialog = false"
       @nextChapter="handleNextChapter"
+    />
+    
+    <SideQuestPanel
+      v-if="showQuestPanel"
+      :quests="sideQuests"
+      :questState="questState"
+      :currentChapterId="currentChapterId"
+      @close="showQuestPanel = false"
+      @claim="handleClaimReward"
     />
     
     <div class="bg-decoration">

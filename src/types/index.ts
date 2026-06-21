@@ -55,6 +55,57 @@ export interface GameState {
   musicVolume: number
 }
 
+export type QuestConditionType =
+  | 'score_threshold'
+  | 'phrase_combo'
+  | 'composition_count'
+  | 'chapter_count'
+  | 'category_diversity'
+
+export interface QuestCondition {
+  type: QuestConditionType
+  params: Record<string, any>
+}
+
+export type QuestRewardType =
+  | 'phrase_unlock'
+  | 'phrase_pool_refresh'
+  | 'score_weight_boost'
+  | 'title_reward'
+
+export interface QuestReward {
+  type: QuestRewardType
+  params: Record<string, any>
+}
+
+export interface SideQuest {
+  id: string
+  chapterId: string
+  title: string
+  description: string
+  icon: string
+  unlockConditions: QuestCondition[]
+  completeConditions: QuestCondition[]
+  rewards: QuestReward[]
+  accentColor: string
+}
+
+export interface QuestState {
+  unlockedQuests: string[]
+  completedQuests: string[]
+  claimedRewards: string[]
+  earnedTitles: string[]
+  activeWeightBoosts: Record<string, number>
+  unlockedRewardPhraseIds: string[]
+}
+
+export interface ScoreWeights {
+  coherence: number
+  imagery: number
+  rhythm: number
+  themeMatch: number
+}
+
 export interface CanvasPhrase extends Phrase {
   width: number
   height: number
