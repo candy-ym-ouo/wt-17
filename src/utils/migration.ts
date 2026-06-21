@@ -6,13 +6,14 @@ import type {
   ThemeState,
   SnapshotStorage,
   Phrase,
+  PhraseSource,
   CanvasPhrase,
 } from '@/types'
 import type { DraftState, EditingCompositionState } from '@/utils/storage'
 import { DEFAULT_QUEST_STATE, DEFAULT_STATE } from '@/utils/storage'
 import { DEFAULT_THEME_ID } from '@/data/themes'
 
-export const CURRENT_SCHEMA_VERSION = 2
+export const CURRENT_SCHEMA_VERSION = 3
 
 export type StorageDataType =
   | 'compositions'
@@ -61,7 +62,7 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
             coreImagery: comp.coreImagery ?? [],
             editCount: comp.editCount ?? 0,
             isPinned: comp.isPinned ?? false,
-            phrases: comp.phrases.map(phrase => migratePhrase(phrase, context)),
+            phrases: comp.phrases.map(phrase => migratePhrase(phrase, context, comp.chapterId)),
           }
           return migrated as Composition
         })
@@ -79,12 +80,22 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
             weight: phrase.weight ?? 1,
             rotation: phrase.rotation ?? 0,
             isPlaced: phrase.isPlaced ?? true,
-            source: phrase.source ?? {
-              type: 'initial' as const,
-              chapterId: comp.chapterId,
-            },
+            source: fillSourceGaps(phrase.source, comp.chapterId),
           })),
           updatedAt: comp.updatedAt ?? comp.createdAt ?? context.timestamp,
+        }))
+      },
+    },
+    {
+      targetVersion: 3,
+      description: '深度补齐已有 source 的 chapterId 和 description 等缺失字段',
+      migrate: (data: Composition[]) => {
+        return data.map(comp => ({
+          ...comp,
+          phrases: comp.phrases.map(phrase => ({
+            ...phrase,
+            source: fillSourceGaps(phrase.source, comp.chapterId),
+          })),
         }))
       },
     },
@@ -158,6 +169,23 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
           },
           unlockedQuests: data.unlockedQuests ?? [],
           completedQuests: data.completedQuests ?? [],
+        }
+      },
+    },
+    {
+      targetVersion: 3,
+      description: '深度补齐 chapterRewardPhrases 中词句的 source 缺失字段',
+      migrate: (data: QuestState) => {
+        const patchedRewardPhrases: Record<string, Phrase[]> = {}
+        for (const [chapterId, phrases] of Object.entries(data.chapterRewardPhrases ?? {})) {
+          patchedRewardPhrases[chapterId] = phrases.map((phrase: Phrase) => ({
+            ...phrase,
+            source: fillSourceGaps(phrase.source, chapterId),
+          }))
+        }
+        return {
+          ...data,
+          chapterRewardPhrases: patchedRewardPhrases,
         }
       },
     },
@@ -240,7 +268,23 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
               rarity: p.rarity ?? 'common',
               weight: p.weight ?? 1,
               rotation: p.rotation ?? 0,
-              source: p.source ?? { type: 'initial' as const, chapterId: snap.chapterId },
+              source: fillSourceGaps(p.source, snap.chapterId),
+            })),
+          })),
+        }
+      },
+    },
+    {
+      targetVersion: 3,
+      description: '深度补齐快照中词句 source 的 chapterId 和 description',
+      migrate: (data: SnapshotStorage) => {
+        return {
+          ...data,
+          snapshots: data.snapshots.map(snap => ({
+            ...snap,
+            phrases: snap.phrases.map(p => ({
+              ...p,
+              source: fillSourceGaps(p.source, snap.chapterId),
             })),
           })),
         }
@@ -278,7 +322,21 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
             rarity: p.rarity ?? 'common',
             weight: p.weight ?? 1,
             rotation: p.rotation ?? 0,
-            source: p.source ?? { type: 'initial' as const, chapterId: data.chapterId },
+            source: fillSourceGaps(p.source, data.chapterId),
+          })),
+        }
+      },
+    },
+    {
+      targetVersion: 3,
+      description: '深度补齐草稿中词句 source 的 chapterId 和 description',
+      migrate: (data: DraftState | null) => {
+        if (!data) return null
+        return {
+          ...data,
+          phrases: data.phrases.map((p: CanvasPhrase) => ({
+            ...p,
+            source: fillSourceGaps(p.source, data.chapterId),
           })),
         }
       },
@@ -309,7 +367,58 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
   ],
 }
 
-function migratePhrase(phrase: Phrase, context: MigrationContext): Phrase {
+function fillSourceGaps(source: PhraseSource | undefined | null, chapterId: string): PhraseSource {
+  if (!source || typeof source !== 'object') {
+    return {
+      type: 'chapter',
+      chapterId,
+      description: `章节掉落`,
+    }
+  }
+
+  const patched = { ...source }
+
+  if (!patched.chapterId && (patched.type === 'chapter' || patched.type === 'initial')) {
+    patched.chapterId = chapterId
+  }
+
+  if (!patched.chapterId && patched.type === 'quest') {
+    patched.chapterId = chapterId
+  }
+
+  if (!patched.chapterId && patched.type === 'reward') {
+    patched.chapterId = chapterId
+  }
+
+  if (!patched.chapterId && patched.type === 'event') {
+    patched.chapterId = chapterId
+  }
+
+  if (!patched.description) {
+    switch (patched.type) {
+      case 'chapter':
+        patched.description = `章节掉落`
+        break
+      case 'quest':
+        patched.description = `任务奖励`
+        break
+      case 'reward':
+        patched.description = `奖励词句`
+        break
+      case 'event':
+        patched.description = `事件获得`
+        break
+      case 'initial':
+        patched.description = `初始词池`
+        break
+    }
+  }
+
+  return patched
+}
+
+function migratePhrase(phrase: Phrase, context: MigrationContext, fallbackChapterId?: string): Phrase {
+  const chapterId = fallbackChapterId ?? ''
   return {
     ...phrase,
     position: phrase.position ?? null,
@@ -317,7 +426,7 @@ function migratePhrase(phrase: Phrase, context: MigrationContext): Phrase {
     isPlaced: phrase.isPlaced ?? true,
     weight: phrase.weight ?? 1,
     rarity: phrase.rarity ?? 'common',
-    source: phrase.source ?? { type: 'initial' as const },
+    source: fillSourceGaps(phrase.source, chapterId),
   }
 }
 

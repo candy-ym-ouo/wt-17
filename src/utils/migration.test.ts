@@ -169,6 +169,213 @@ export function runMigrationTests(): void {
     assertEqual(phrase.rarity, 'common', 'rarity')
   })
 
+  console.log('\n🔗 v3 深度补齐 source 测试:')
+  runTest('已有 source.type=chapter 但缺少 chapterId 时应补齐', () => {
+    const oldData = [
+      {
+        id: 'comp_v3_1',
+        chapterId: 'ch3',
+        phrases: [
+          {
+            id: 'p1',
+            text: '明月',
+            category: 'scene',
+            position: null,
+            rotation: 0,
+            isPlaced: true,
+            weight: 1,
+            rarity: 'common',
+            source: { type: 'chapter' },
+          },
+        ] as Phrase[],
+        score: { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        title: 'test',
+      },
+    ]
+
+    const migrated = migrateData<Composition[]>('compositions', oldData)
+    const source = migrated.data[0].phrases[0].source
+
+    assertEqual(source.chapterId, 'ch3', 'chapterId 补齐')
+    assertEqual(source.type, 'chapter', 'type 不变')
+    assert(!!source.description, 'description 已补齐')
+  })
+
+  runTest('已有 source.type=initial 但缺少 chapterId 和 description 时应补齐', () => {
+    const oldData = [
+      {
+        id: 'comp_v3_2',
+        chapterId: 'ch2',
+        phrases: [
+          {
+            id: 'p2',
+            text: '清风',
+            category: 'scene',
+            position: null,
+            rotation: 0,
+            isPlaced: true,
+            weight: 1,
+            rarity: 'common',
+            source: { type: 'initial' },
+          },
+        ] as Phrase[],
+        score: { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        title: 'test',
+      },
+    ]
+
+    const migrated = migrateData<Composition[]>('compositions', oldData)
+    const source = migrated.data[0].phrases[0].source
+
+    assertEqual(source.chapterId, 'ch2', 'chapterId 补齐')
+    assertEqual(source.type, 'initial', 'type 不变')
+    assertEqual(source.description, '初始词池', 'description 补齐')
+  })
+
+  runTest('已有 source.type=quest 但缺少 chapterId 时应补齐', () => {
+    const oldData = [
+      {
+        id: 'comp_v3_3',
+        chapterId: 'ch1',
+        phrases: [
+          {
+            id: 'p3',
+            text: '奖励词',
+            category: 'emotion',
+            position: null,
+            rotation: 0,
+            isPlaced: true,
+            weight: 2,
+            rarity: 'rare',
+            source: { type: 'quest', questId: 'q1' },
+          },
+        ] as Phrase[],
+        score: { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        title: 'test',
+      },
+    ]
+
+    const migrated = migrateData<Composition[]>('compositions', oldData)
+    const source = migrated.data[0].phrases[0].source
+
+    assertEqual(source.chapterId, 'ch1', 'chapterId 补齐')
+    assertEqual(source.questId, 'q1', 'questId 保留')
+    assertEqual(source.type, 'quest', 'type 不变')
+    assertEqual(source.description, '任务奖励', 'description 补齐')
+  })
+
+  runTest('已有 source.type=reward 但缺少 chapterId 和 description 时应补齐', () => {
+    const oldData = [
+      {
+        id: 'comp_v3_4',
+        chapterId: 'ch4',
+        phrases: [
+          {
+            id: 'p4',
+            text: '传说词',
+            category: 'imagery',
+            position: null,
+            rotation: 0,
+            isPlaced: true,
+            weight: 3,
+            rarity: 'legendary',
+            source: { type: 'reward' },
+          },
+        ] as Phrase[],
+        score: { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        title: 'test',
+      },
+    ]
+
+    const migrated = migrateData<Composition[]>('compositions', oldData)
+    const source = migrated.data[0].phrases[0].source
+
+    assertEqual(source.chapterId, 'ch4', 'chapterId 补齐')
+    assertEqual(source.type, 'reward', 'type 不变')
+    assertEqual(source.description, '奖励词句', 'description 补齐')
+  })
+
+  runTest('source 已完整时不应被覆盖', () => {
+    const oldData = [
+      {
+        id: 'comp_v3_5',
+        chapterId: 'ch5',
+        phrases: [
+          {
+            id: 'p5',
+            text: '完整词',
+            category: 'time',
+            position: { x: 10, y: 20 },
+            rotation: 0,
+            isPlaced: true,
+            weight: 1,
+            rarity: 'rare',
+            source: { type: 'chapter', chapterId: 'ch5', description: '章节掉落 · 自由之境' },
+          },
+        ] as Phrase[],
+        score: { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        title: 'test',
+      },
+    ]
+
+    const migrated = migrateData<Composition[]>('compositions', oldData)
+    const source = migrated.data[0].phrases[0].source
+
+    assertEqual(source.chapterId, 'ch5', 'chapterId 保留')
+    assertEqual(source.description, '章节掉落 · 自由之境', 'description 保留不被覆盖')
+  })
+
+  runTest('v2 已迁移数据再跑 v3 迁移应仍能补齐 source', () => {
+    const v2Data = {
+      _schemaVersion: 2,
+      data: [
+        {
+          id: 'comp_v2_then_v3',
+          chapterId: 'ch3',
+          phrases: [
+            {
+              id: 'p_v2',
+              text: '旧迁移词',
+              category: 'scene',
+              position: null,
+              rotation: 0,
+              isPlaced: true,
+              weight: 1,
+              rarity: 'common',
+              source: { type: 'chapter' },
+            },
+          ],
+          score: { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          title: 'test',
+          collectionIds: [],
+          creationDuration: 0,
+          coreImagery: [],
+          editCount: 0,
+          isPinned: false,
+        },
+      ],
+    }
+
+    const migrated = migrateData<Composition[]>('compositions', v2Data)
+    const source = migrated.data[0].phrases[0].source
+
+    assertEqual(migrated._schemaVersion, CURRENT_SCHEMA_VERSION, '版本升至最新')
+    assertEqual(source.chapterId, 'ch3', 'chapterId 被补齐')
+    assert(!!source.description, 'description 被补齐')
+  })
+
   console.log('\n🎮 GameState 迁移测试:')
   runTest('应该从版本 0 迁移到最新版本', () => {
     const oldData: Partial<GameState> = {
