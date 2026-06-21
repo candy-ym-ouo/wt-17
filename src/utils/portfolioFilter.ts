@@ -93,6 +93,8 @@ const getDateGroupLabel = (timestamp: number): string => {
 export const groupCompositions = (
   compositions: Composition[],
   groupBy: GroupBy,
+  sortBy: SortBy,
+  sortAscending: boolean,
   chaptersTitles: Record<string, { title: string; accent: string }>,
   collections: Collection[]
 ): GroupedCompositions[] => {
@@ -100,38 +102,12 @@ export const groupCompositions = (
     return [{
       groupKey: 'all',
       groupLabel: '全部作品',
-      compositions: sortCompositions(compositions, 'date')
+      compositions: sortCompositions(compositions, sortBy, sortAscending)
     }]
   }
   const groups = new Map<string, GroupedCompositions>()
-  compositions.forEach(comp => {
-    let groupKey = ''
-    let groupLabel = ''
-    switch (groupBy) {
-      case 'chapter':
-        groupKey = comp.chapterId
-        groupLabel = chaptersTitles[comp.chapterId]?.title || '未知章节'
-        break
-      case 'grade':
-        groupKey = getGrade(comp.score.total)
-        groupLabel = groupKey
-        break
-      case 'date':
-        groupKey = getDateGroupKey(comp.createdAt)
-        groupLabel = getDateGroupLabel(comp.createdAt)
-        break
-      case 'collection':
-        const collIds = comp.collectionIds || []
-        if (collIds.length === 0) {
-          groupKey = 'uncategorized'
-          groupLabel = '未分类'
-        } else {
-          groupKey = collIds[0]
-          const coll = collections.find(c => c.id === groupKey)
-          groupLabel = coll?.name || '未知合集'
-        }
-        break
-    }
+  
+  const addToGroup = (groupKey: string, groupLabel: string, comp: Composition) => {
     if (!groups.has(groupKey)) {
       groups.set(groupKey, {
         groupKey,
@@ -140,11 +116,50 @@ export const groupCompositions = (
       })
     }
     groups.get(groupKey)!.compositions.push(comp)
+  }
+
+  compositions.forEach(comp => {
+    switch (groupBy) {
+      case 'chapter': {
+        const groupKey = comp.chapterId
+        const groupLabel = chaptersTitles[comp.chapterId]?.title || '未知章节'
+        addToGroup(groupKey, groupLabel, comp)
+        break
+      }
+      case 'grade': {
+        const groupKey = getGrade(comp.score.total)
+        const groupLabel = groupKey
+        addToGroup(groupKey, groupLabel, comp)
+        break
+      }
+      case 'date': {
+        const groupKey = getDateGroupKey(comp.createdAt)
+        const groupLabel = getDateGroupLabel(comp.createdAt)
+        addToGroup(groupKey, groupLabel, comp)
+        break
+      }
+      case 'collection': {
+        const collIds = comp.collectionIds || []
+        if (collIds.length === 0) {
+          addToGroup('uncategorized', '未分类', comp)
+        } else {
+          collIds.forEach(collId => {
+            const coll = collections.find(c => c.id === collId)
+            if (coll) {
+              addToGroup(collId, coll.name, comp)
+            }
+          })
+        }
+        break
+      }
+    }
   })
+
   const result = Array.from(groups.values())
   result.forEach(g => {
-    g.compositions = sortCompositions(g.compositions, 'date')
+    g.compositions = sortCompositions(g.compositions, sortBy, sortAscending)
   })
+
   if (groupBy === 'grade') {
     result.sort((a, b) => {
       const aIdx = GRADE_ORDER.indexOf(a.groupKey as ScoreGrade)

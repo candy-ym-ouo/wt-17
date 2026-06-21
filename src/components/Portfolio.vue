@@ -85,6 +85,8 @@ const groupedCompositions = computed<GroupedCompositions[]>(() => {
   return groupCompositions(
     filteredCompositions.value,
     groupBy.value,
+    sortBy.value,
+    sortAscending.value,
     props.chaptersTitles,
     props.collections
   )
