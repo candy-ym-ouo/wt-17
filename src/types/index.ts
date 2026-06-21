@@ -581,3 +581,86 @@ export interface GatheringSessionState {
   isPaused: boolean
   isComplete: boolean
 }
+
+export type TonePattern = 'ping' | 'ze' | 'any'
+
+export interface CipaiLine {
+  index: number
+  charCount: number
+  tonePattern: TonePattern[]
+  rhyme: boolean
+  description?: string
+}
+
+export interface CipaiTemplate {
+  id: string
+  name: string
+  alias?: string
+  description: string
+  origin?: string
+  difficulty: 'easy' | 'medium' | 'hard'
+  totalLines: number
+  totalChars: number
+  lines: CipaiLine[]
+  rhymeScheme?: string[]
+  recommendedThemes?: string[]
+  example?: {
+    title: string
+    author: string
+    content: string[]
+  }
+}
+
+export interface CipaiScoringConfig {
+  rhythmWeight: number
+  rhymeWeight: number
+  tonePatternWeight: number
+  formMatchWeight: number
+}
+
+export interface CipaiCheckResult {
+  lineIndex: number
+  expectedCharCount: number
+  actualCharCount: number
+  charCountMatch: boolean
+  toneMatches: boolean[]
+  rhymeMatch: boolean
+  errors: string[]
+  warnings: string[]
+}
+
+export interface CipaiScoreBreakdown {
+  formMatch: number
+  tonePattern: number
+  rhyme: number
+  rhythm: number
+  total: number
+}
+
+export interface CipaiRecommendation {
+  type: 'char_count' | 'tone' | 'rhyme' | 'category'
+  description: string
+  suggestions: string[]
+  priority: 'high' | 'medium' | 'low'
+}
+
+export interface CipaiWorkshopState {
+  activeCipaiId: string | null
+  currentLineIndex: number
+  checkResults: CipaiCheckResult[]
+  score: CipaiScoreBreakdown
+  recommendations: CipaiRecommendation[]
+  strictMode: boolean
+}
+
+export type CipaiScoringMode = 'relaxed' | 'standard' | 'strict'
+
+export interface CipaiScoringRuleSet {
+  mode: CipaiScoringMode
+  label: string
+  description: string
+  config: CipaiScoringConfig
+  charCountTolerance: number
+  toneTolerance: number
+  rhymeTolerance: number
+}

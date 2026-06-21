@@ -26,6 +26,7 @@ const emit = defineEmits<{
   (e: 'openSnapshots'): void
   (e: 'openThemes'): void
   (e: 'openGathering'): void
+  (e: 'openCipaiWorkshop'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save'): void
@@ -120,6 +121,9 @@ const emit = defineEmits<{
       </button>
       <button class="icon-btn gathering-btn" @click="emit('openGathering')" title="主题诗会">
         🎑
+      </button>
+      <button class="icon-btn cipai-btn" @click="emit('openCipaiWorkshop')" title="词牌工坊">
+        📜
       </button>
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺

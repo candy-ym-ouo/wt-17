@@ -52,6 +52,7 @@ import RecommendationTip from '@/components/RecommendationTip.vue'
 import PoetryGatheringPanel from '@/components/PoetryGatheringPanel.vue'
 import GatheringSession from '@/components/GatheringSession.vue'
 import GatheringRankingPanel from '@/components/GatheringRankingPanel.vue'
+import CipaiWorkshop from '@/components/CipaiWorkshop.vue'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -122,6 +123,8 @@ const activeGatheringId = ref<string | null>(null)
 const activeGatheringChapterId = ref<string | null>(null)
 const gatheringBoardPhrases = ref<Phrase[]>([])
 const gatheringElapsedSeconds = ref(0)
+const showCipaiWorkshop = ref(false)
+const cipaiScoringMode = ref<'relaxed' | 'standard' | 'strict'>('standard')
 
 let autoSaveTimer: number | null = null
 
@@ -1428,6 +1431,7 @@ watch(currentChapterId, (newId) => {
       @openSnapshots="showSnapshotPanel = true"
       @openThemes="showThemePanel = true"
       @openGathering="showGatheringPanel = true"
+      @openCipaiWorkshop="showCipaiWorkshop = true"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -1697,6 +1701,13 @@ watch(currentChapterId, (newId) => {
       v-if="showGatheringRanking && rankingGathering"
       :gathering="rankingGathering"
       @close="showGatheringRanking = false"
+    />
+    
+    <CipaiWorkshop
+      :visible="showCipaiWorkshop"
+      :phrases="phrasesForScoring"
+      @close="showCipaiWorkshop = false"
+      @changeScoringMode="cipaiScoringMode = $event"
     />
     
     <div class="bg-decoration">
