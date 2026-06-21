@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { ScoreBreakdown, DiagnosticReport, Phrase, Chapter, PhraseRarity, SettlementTriggeredRule } from '@/types'
+import type { ScoreBreakdown, DiagnosticReport, Phrase, Chapter, PhraseRarity, SettlementRule, SettlementTriggeredRule } from '@/types'
 import { getScoreGrade, generateDiagnosticReport, applySettlementRules } from '@/utils/scoring'
 import { rarityLabels, rarityColors, rarityScoreBonus } from '@/data/phrases'
 
@@ -129,14 +129,14 @@ const hiddenKeywordsStatus = computed(() => {
   }
 })
 
-const isRuleTriggered = (rule: any): boolean => {
+const isRuleTriggered = (rule: SettlementRule): boolean => {
   if (!settlementResult.value) return false
-  return settlementResult.value.triggeredRules.some(t => t.rule.type === rule.type && t.rule.params.label === rule.params.label)
+  return settlementResult.value.triggeredRules.some(t => t.type === rule.type && t.label === rule.params.label)
 }
 
-const getRuleAdjustment = (rule: any): number => {
+const getRuleAdjustment = (rule: SettlementRule): number => {
   if (!settlementResult.value) return 0
-  const triggered = settlementResult.value.triggeredRules.find(t => t.rule.type === rule.type && t.rule.params.label === rule.params.label)
+  const triggered = settlementResult.value.triggeredRules.find(t => t.type === rule.type && t.label === rule.params.label)
   return triggered?.adjustment || 0
 }
 

@@ -1,4 +1,4 @@
-import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme, TitleOption, TitleStrategyType, SettlementRule, LayoutAnalysis } from '@/types'
+import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme, TitleOption, TitleStrategyType, PhasedGuidance, CountPhase, ScorePhase, CategoryPhase, CategoryInsight, SettlementRule, SettlementTriggeredRule, LayoutAnalysis } from '@/types'
 import { rarityScoreBonus } from '@/data/phrases'
 
 const DEFAULT_WEIGHTS: ScoreWeights = {
@@ -6,86 +6,6 @@ const DEFAULT_WEIGHTS: ScoreWeights = {
   imagery: 0.2,
   rhythm: 0.15,
   themeMatch: 0.25
-}
-
-export interface SettlementResult {
-  totalAdjustment: number
-  triggeredRules: Array<{
-    rule: SettlementRule
-    adjustment: number
-  }>
-}
-
-export const applySettlementRules = (
-  phrases: Phrase[],
-  rules: SettlementRule[]
-): SettlementResult => {
-  const triggeredRules: SettlementResult['triggeredRules'] = []
-  let totalAdjustment = 0
-  const phraseTexts = new Set(phrases.map(p => p.text))
-
-  for (const rule of rules) {
-    switch (rule.type) {
-      case 'qualifier_bonus': {
-        const words: string[] = rule.params.words || []
-        const bonusPerWord: number = rule.params.bonusPerWord || 3
-        const matchedCount = words.filter(w => phraseTexts.has(w)).length
-        if (matchedCount > 0) {
-          const adjustment = matchedCount * bonusPerWord
-          totalAdjustment += adjustment
-          triggeredRules.push({ rule, adjustment })
-        }
-        break
-      }
-      case 'hidden_keyword_trigger': {
-        const keywords: string[] = rule.params.keywords || []
-        const bonus: number = rule.params.bonus || 5
-        const matched = keywords.filter(k => phraseTexts.has(k))
-        if (matched.length > 0) {
-          const adjustment = matched.length * bonus
-          totalAdjustment += adjustment
-          triggeredRules.push({ rule, adjustment })
-        }
-        break
-      }
-      case 'forbidden_penalty': {
-        const words: string[] = rule.params.words || []
-        const penaltyPerWord: number = rule.params.penaltyPerWord || 5
-        const matchedCount = words.filter(w => phraseTexts.has(w)).length
-        if (matchedCount > 0) {
-          const adjustment = -(matchedCount * penaltyPerWord)
-          totalAdjustment += adjustment
-          triggeredRules.push({ rule, adjustment })
-        }
-        break
-      }
-      case 'category_combo': {
-        const categories: PhraseCategory[] = rule.params.categories || []
-        const minCount: number = rule.params.minCount || 2
-        const bonus: number = rule.params.bonus || 6
-        const allMet = categories.every(cat =>
-          phrases.filter(p => p.category === cat).length >= minCount
-        )
-        if (allMet && categories.length > 0) {
-          totalAdjustment += bonus
-          triggeredRules.push({ rule, adjustment: bonus })
-        }
-        break
-      }
-      case 'all_hidden_revealed': {
-        const keywords: string[] = rule.params.keywords || []
-        const bonus: number = rule.params.bonus || 8
-        const allRevealed = keywords.length > 0 && keywords.every(k => phraseTexts.has(k))
-        if (allRevealed) {
-          totalAdjustment += bonus
-          triggeredRules.push({ rule, adjustment: bonus })
-        }
-        break
-      }
-    }
-  }
-
-  return { totalAdjustment, triggeredRules }
 }
 
 export const resolveWeights = (boosts: Record<string, number>, themeWeights?: Partial<ScoreWeights>): ScoreWeights => {
@@ -157,13 +77,7 @@ export const calculateScore = (phrases: Phrase[], chapter: Chapter, weightBoosts
   const weights = resolveWeights(weightBoosts || {}, theme?.scoring.scoreWeights)
   const countBonus = Math.min(phrases.length / chapter.targetPhraseCount, 1)
   const baseScore = (coherence * weights.coherence + imagery * weights.imagery + rhythm * weights.rhythm + themeMatch * weights.themeMatch) * 100
-  let total = Math.round(baseScore * countBonus * (1 + rarityBonus + themeBonus))
-
-  const rules = chapter.settlementRules || []
-  if (rules.length > 0 && phrases.length > 0) {
-    const settlement = applySettlementRules(phrases, rules)
-    total = Math.max(0, total + settlement.totalAdjustment)
-  }
+  const total = Math.round(baseScore * countBonus * (1 + rarityBonus + themeBonus))
 
   return {
     coherence: Math.round(coherence * 100),
@@ -1063,116 +977,517 @@ export const generateDiagnosticReport = (
 
   const themeDeviation = analyzeThemeDeviation(phrases, chapter)
   const wordClassImbalance = analyzeWordClassImbalance(phrases)
-  const layoutAnalysis = analyzeLayout(phrases)
   const revisionPath = buildRevisionPath(scoreLosses, themeDeviation, wordClassImbalance, phrases.length, targetCount)
   const overallSuggestion = generateOverallSuggestion(score, themeDeviation, wordClassImbalance)
-
-  const rules = chapter.settlementRules || []
-  let settlementResult: DiagnosticReport['settlementResult']
-  let forbiddenWarnings: string[] | undefined
-  let qualifierHints: string[] | undefined
-  let hiddenKeywordStatus: DiagnosticReport['hiddenKeywordStatus']
-
-  if (rules.length > 0 && phrases.length > 0) {
-    const settlement = applySettlementRules(phrases, rules)
-    settlementResult = {
-      totalAdjustment: settlement.totalAdjustment,
-      triggeredRules: settlement.triggeredRules.map(t => ({
-        type: t.rule.type,
-        label: t.rule.params.label || '',
-        adjustment: t.adjustment,
-        description: t.rule.description
-      }))
-    }
-  }
-
-  const forbiddenWords = chapter.forbiddenWords || []
-  if (forbiddenWords.length > 0) {
-    const phraseTexts = new Set(phrases.map(p => p.text))
-    const used = forbiddenWords.filter(w => phraseTexts.has(w))
-    if (used.length > 0) {
-      forbiddenWarnings = used.map(w => `「${w}」为禁用词，将触发扣分`)
-    }
-  }
-
-  const qualifierWords = chapter.qualifierWords || []
-  if (qualifierWords.length > 0) {
-    const phraseTexts = new Set(phrases.map(p => p.text))
-    const unused = qualifierWords.filter(w => !phraseTexts.has(w))
-    if (unused.length > 0 && phrases.length >= 2) {
-      qualifierHints = unused.map(w => `「${w}」为限定词，选用可获加分`)
-    }
-  }
-
-  const hiddenKeywords = chapter.hiddenKeywords || []
-  if (hiddenKeywords.length > 0) {
-    const phraseTexts = new Set(phrases.map(p => p.text))
-    const revealed = hiddenKeywords.filter(k => phraseTexts.has(k))
-    hiddenKeywordStatus = {
-      total: hiddenKeywords.length,
-      revealed,
-      unrevealed: hiddenKeywords.length - revealed.length
-    }
-  }
 
   return {
     scoreLosses,
     themeDeviation,
     wordClassImbalance,
-    layoutAnalysis,
     revisionPath,
     overallSuggestion,
-    settlementResult,
-    forbiddenWarnings,
-    qualifierHints,
-    hiddenKeywordStatus
+    layoutAnalysis: analyzeLayout(phrases)
+  }
+}
+
+const CATEGORY_LABELS_GUIDANCE: Record<PhraseCategory, string> = {
+  scene: '景物',
+  emotion: '情感',
+  time: '时间',
+  action: '动作',
+  imagery: '意象'
+}
+
+const CHAPTER_THEME_VOCAB: Record<string, {
+  openers: string[]
+  scene_words: string[]
+  emotion_words: string[]
+  milestones: string[]
+}> = {
+  '春夜': {
+    openers: ['铺开春夜的词笺', '点亮春江的明月', '唤醒花月的幽思'],
+    scene_words: ['明月', '落花', '垂柳'],
+    emotion_words: ['相思', '缱绻', '清欢'],
+    milestones: ['初遇春月', '花影渐浓', '月夜未央', '诗意盎然', '春宵圆满']
+  },
+  '秋思': {
+    openers: ['踏上秋日的古道', '扬起西风的征帆', '晕开残阳的暮色'],
+    scene_words: ['青山', '残阳', '古道'],
+    emotion_words: ['离愁', '寂寥', '惆怅'],
+    milestones: ['初入秋山', '暮色渐沉', '羁愁暗生', '秋思绵长', '古道斜阳']
+  },
+  '归乡': {
+    openers: ['点亮归乡的灯火', '推开故园的柴门', '掸落旅途的风雪'],
+    scene_words: ['初雪', '繁星', '青灯'],
+    emotion_words: ['相思', '缱绻'],
+    milestones: ['雪夜初程', '灯火在望', '故园渐近', '归心似箭', '温酒重逢']
+  },
+  '江湖': {
+    openers: ['撑开夜雨的油纸伞', '拂去江湖的尘霜', '弹响锦瑟的旧弦'],
+    scene_words: ['夜雨', '长河', '古寺'],
+    emotion_words: ['淡泊', '怅惘'],
+    milestones: ['初入江湖', '夜雨初霁', '琴剑相伴', '十年灯火', '笑傲江湖']
+  },
+  '自由': {
+    openers: ['铺开无垠的宣纸', '放飞无拘的思绪', '开启自由的诗篇'],
+    scene_words: ['星辰', '云海'],
+    emotion_words: ['清欢', '无我'],
+    milestones: ['鸿蒙初辟', '气象初成', '纵横捭阖', '妙造自然', '天人合一']
+  }
+}
+
+const getThemeVocab = (theme: string) => {
+  return CHAPTER_THEME_VOCAB[theme] || CHAPTER_THEME_VOCAB['春夜']
+}
+
+const determineCountPhase = (current: number, target: number): CountPhase => {
+  if (current === 0) return 'empty'
+  const ratio = current / target
+  if (ratio < 0.4) return 'early'
+  if (ratio < 0.8) return 'building'
+  if (ratio <= 1.2) return 'sufficient'
+  return 'exceed'
+}
+
+const determineScorePhase = (total: number): ScorePhase => {
+  if (total === 0) return 'unstarted'
+  if (total < 25) return 'nascent'
+  if (total < 50) return 'forming'
+  if (total < 70) return 'refining'
+  if (total < 90) return 'polishing'
+  return 'masterpiece'
+}
+
+const determineCategoryPhase = (
+  phrases: Phrase[],
+  insights: CategoryInsight[]
+): CategoryPhase => {
+  if (phrases.length < 2) return 'mono'
+  const usedCategories = new Set(phrases.map(p => p.category))
+  const activeCount = usedCategories.size
+  if (activeCount <= 1) return 'mono'
+  if (activeCount === 2) return 'dual'
+  
+  const hasExcess = insights.some(i => i.status === 'excess')
+  const hasDeficit = insights.some(i => i.status === 'deficit')
+  if (activeCount >= 4 && !hasExcess && !hasDeficit) return 'balanced'
+  if (activeCount >= 3) return 'varied'
+  return 'dual'
+}
+
+const buildCategoryInsights = (phrases: Phrase[]): CategoryInsight[] => {
+  const allCategories: PhraseCategory[] = ['scene', 'emotion', 'time', 'action', 'imagery']
+  const total = phrases.length || 1
+  
+  return allCategories.map(cat => {
+    const count = phrases.filter(p => p.category === cat).length
+    const percentage = count / total
+    const ideal = IDEAL_CATEGORY_PERCENTAGES[cat]
+    let status: CategoryInsight['status'] = 'none'
+    
+    if (count > 0) {
+      if (percentage > ideal * 1.6 && count >= 2) {
+        status = 'excess'
+      } else if (percentage < ideal * 0.4 && phrases.length >= 4) {
+        status = 'deficit'
+      } else {
+        status = 'balanced'
+      }
+    }
+    
+    return {
+      category: cat,
+      label: CATEGORY_LABELS_GUIDANCE[cat],
+      count,
+      percentage,
+      idealPercentage: ideal,
+      status
+    }
+  })
+}
+
+const generateCountSuggestion = (
+  phase: CountPhase,
+  current: number,
+  target: number,
+  themeVocab: ReturnType<typeof getThemeVocab>
+): string => {
+  const diff = target - current
+  switch (phase) {
+    case 'empty':
+      return `先从「${themeVocab.scene_words[0]}」「${themeVocab.emotion_words[0]}」入手，选起首词句`
+    case 'early':
+      return `再添 ${diff} 个词，不妨引入${themeVocab.scene_words.slice(1, 3).join('、')}等景致`
+    case 'building':
+      return `接近目标 ${target}，差 ${diff} 词，可补时间或动作类词汇`
+    case 'sufficient':
+      return current < target
+        ? `差 ${diff} 词即可达标，斟酌是否精益求精`
+        : current > target
+          ? `已超目标 ${current - target} 词，可筛选精简，去芜存菁`
+          : `已达目标 ${target} 词，数量合宜`
+    case 'exceed':
+      return `超出 ${current - target} 词，建议删选，留取最富意境者`
+  }
+}
+
+const generateCategorySuggestion = (
+  phase: CategoryPhase,
+  insights: CategoryInsight[],
+  themeVocab: ReturnType<typeof getThemeVocab>
+): string | undefined => {
+  const missing = insights.filter(i => i.status === 'deficit' || (i.count === 0 && i.category !== 'action'))
+  const excess = insights.filter(i => i.status === 'excess')
+  
+  if (phase === 'mono') {
+    const used = insights.find(i => i.count > 0)
+    if (!used) return undefined
+    if (used.category === 'scene') return '仅有景致，缺少情感注入，可加情感或时间类词汇'
+    if (used.category === 'emotion') return '唯有情思，缺乏景物依托，试添景物以承载情感'
+    return '词类尚单一，可跨类搭配，如景与情、时与动'
+  }
+  
+  if (phase === 'dual') {
+    return '词类仅两类，层次单薄，可引入时间或意象类丰富层次'
+  }
+  
+  if (excess.length > 0) {
+    const excessLabels = excess.map(e => e.label).join('、')
+    return `${excessLabels}偏多，可适度削减`
+  }
+  
+  if (missing.length > 0) {
+    const missingLabels = missing.slice(0, 2).map(m => m.label).join('、')
+    return `${missingLabels}不足，建议补充`
+  }
+  
+  if (phase === 'balanced') {
+    return '词类分布均衡，五大类皆备，结构天成'
+  }
+  
+  return '词类多样，结构初具，可微调以求完美'
+}
+
+const generateScoreSuggestion = (
+  phase: ScorePhase,
+  score: ScoreBreakdown,
+  theme: string
+): string | undefined => {
+  switch (phase) {
+    case 'unstarted':
+      return undefined
+    case 'nascent':
+      return '诗意初生，先求数量齐备，再谋质量精进'
+    case 'forming':
+      return '骨架初成，可留意关键词的融入与长短词的节奏'
+    case 'refining': {
+      const dimensions: Array<{ key: keyof ScoreBreakdown; label: string }> = [
+        { key: 'coherence', label: '连贯性' },
+        { key: 'imagery', label: '意象' },
+        { key: 'rhythm', label: '韵律' },
+        { key: 'themeMatch', label: '契合' }
+      ]
+      const weakest = dimensions
+        .filter(d => d.key !== 'total')
+        .sort((a, b) => (score[a.key] as number) - (score[b.key] as number))[0]
+      return `${weakest.label}最待提升，可据此方向精修`
+    }
+    case 'polishing':
+      return '已入佳境，细品词句间的呼应，推敲以求更上层楼'
+    case 'masterpiece':
+      return theme === '自由' ? '神来之笔，自由之境已达化境' : '神品可期，或可斟酌画龙点睛之笔'
+  }
+}
+
+const PHASE_LABELS: Record<CountPhase, string[]> = {
+  empty: ['落笔之始', '鸿蒙初开', '词笺新铺'],
+  early: ['遣词之初', '诗意萌生', '初绘丹青'],
+  building: ['铺陈之中', '意象渐丰', '脉络渐显'],
+  sufficient: ['章法初成', '初具气象', '辞藻已备'],
+  exceed: ['洋洋大观', '词满为患', '宜收宜放']
+}
+
+const PHASE_ICONS: Record<CountPhase, string> = {
+  empty: '○',
+  early: '◐',
+  building: '◔',
+  sufficient: '●',
+  exceed: '✦'
+}
+
+const TONE_BY_PHASE: Record<ScorePhase, PhasedGuidance['accentTone']> = {
+  unstarted: 'cold',
+  nascent: 'cold',
+  forming: 'warm',
+  refining: 'jade',
+  polishing: 'violet',
+  masterpiece: 'gold'
+}
+
+export const generatePhasedGuidance = (
+  phrases: Phrase[],
+  chapter: Chapter,
+  score: ScoreBreakdown,
+  targetCount: number
+): PhasedGuidance => {
+  const current = phrases.length
+  const themeVocab = getThemeVocab(chapter.theme)
+  
+  const countPhase = determineCountPhase(current, targetCount)
+  const scorePhase = determineScorePhase(score.total)
+  const categoryInsights = buildCategoryInsights(phrases)
+  const categoryPhase = determineCategoryPhase(phrases, categoryInsights)
+  
+  const progressPct = Math.min(current / targetCount * 100, 120)
+  
+  const countSuggestion = generateCountSuggestion(countPhase, current, targetCount, themeVocab)
+  const categorySuggestion = generateCategorySuggestion(categoryPhase, categoryInsights, themeVocab)
+  const scoreSuggestion = generateScoreSuggestion(scorePhase, score, chapter.theme)
+  
+  const opener = themeVocab.openers[Math.floor(Math.random() * themeVocab.openers.length)]
+  const milestoneIndex = Math.min(
+    Math.floor((current / Math.max(targetCount, 1)) * themeVocab.milestones.length),
+    themeVocab.milestones.length - 1
+  )
+  
+  let headline: string
+  let primarySuggestion: string
+  let encouragement: string
+  
+  if (countPhase === 'empty') {
+    headline = chapter.theme === '自由' ? '自由之境，随心落笔' : `${opener}，且待诗意流淌`
+    primarySuggestion = countSuggestion
+    encouragement = chapter.hint
+  } else if (scorePhase === 'masterpiece') {
+    headline = '神品将成，诗意盎然'
+    primarySuggestion = scoreSuggestion || '品读全篇，或可直接定稿'
+    encouragement = '此曲只应天上有，人间能得几回闻。'
+  } else if (countPhase === 'exceed') {
+    headline = '词已过盈，宜思取舍'
+    primarySuggestion = countSuggestion
+    encouragement = '损有余而补不足，精简亦为诗道。'
+  } else if (categoryPhase === 'mono' && current >= 2) {
+    headline = `${themeVocab.milestones[milestoneIndex]}，层次待丰`
+    primarySuggestion = categorySuggestion || countSuggestion
+    encouragement = '声色香味触法，缺一不可成诗。'
+  } else if (scorePhase === 'polishing') {
+    headline = '佳作在望，精雕细琢'
+    primarySuggestion = scoreSuggestion || categorySuggestion || countSuggestion
+    encouragement = '吟安一个字，捻断数茎须。'
+  } else if (countPhase === 'sufficient' && current >= targetCount) {
+    headline = `${themeVocab.milestones[Math.min(milestoneIndex, themeVocab.milestones.length - 2)]}，章法已备`
+    primarySuggestion = scoreSuggestion || categorySuggestion || '数量已足，可细品词与词的呼应'
+    encouragement = '好诗不厌百回改，推敲之间境界生。'
+  } else {
+    headline = `${themeVocab.milestones[milestoneIndex]}，循序而进`
+    const suggestions = [categorySuggestion, scoreSuggestion, countSuggestion].filter(Boolean) as string[]
+    primarySuggestion = suggestions[0] || countSuggestion
+    encouragement = current < 2
+      ? '千里之行，始于足下。'
+      : current < targetCount / 2
+        ? '不积跬步，无以至千里。'
+        : '靡不有初，鲜克有终。'
+  }
+  
+  const secondarySuggestion = (
+    countPhase !== 'empty' &&
+    scorePhase !== 'unstarted' &&
+    (categorySuggestion && categorySuggestion !== primarySuggestion) || undefined
+  ) ? categorySuggestion : undefined
+  
+  const stageLabels = PHASE_LABELS[countPhase]
+  const stageLabel = stageLabels[milestoneIndex % stageLabels.length]
+  
+  return {
+    countPhase,
+    scorePhase,
+    categoryPhase,
+    progress: {
+      current,
+      target: targetCount,
+      percentage: progressPct
+    },
+    categoryInsights,
+    headline,
+    primarySuggestion,
+    secondarySuggestion,
+    categorySuggestion,
+    scoreSuggestion,
+    countSuggestion,
+    encouragement,
+    stageLabel,
+    stageIcon: PHASE_ICONS[countPhase],
+    accentTone: TONE_BY_PHASE[scorePhase]
   }
 }
 
 const analyzeLayout = (phrases: Phrase[]): LayoutAnalysis => {
-  const hasPositions = phrases.some(p => p.position !== null && p.isPlaced)
+  const hasPositions = phrases.every(p => p.position !== null)
   
-  if (!hasPositions) {
+  const positioned = phrases.filter(p => p.position !== null)
+  if (positioned.length === 0) {
     return {
       hasPositions: false,
       spatialRhythm: 0,
       spatialCompleteness: 0,
       wordOrderCoherence: 0,
-      readingOrder: phrases.map(p => p.text),
-      layoutIssues: ['词句尚未放置于画布，布局分析待激活']
+      readingOrder: [],
+      layoutIssues: ['画布为空，开始添加词句吧']
     }
   }
-
-  const placedPhrases = phrases.filter(p => p.position !== null && p.isPlaced)
-  const readingOrder = placedPhrases
-    .slice()
-    .sort((a, b) => {
-      const aPos = a.position!
-      const bPos = b.position!
-      if (Math.abs(aPos.y - bPos.y) < 20) return aPos.x - bPos.x
-      return aPos.y - bPos.y
-    })
-    .map(p => p.text)
-
-  const totalPhrases = placedPhrases.length
-  const spatialRhythm = Math.min(100, Math.round(60 + Math.random() * 20))
-  const spatialCompleteness = Math.min(100, Math.round(55 + Math.random() * 25))
-  const wordOrderCoherence = Math.min(100, Math.round(65 + Math.random() * 20))
-
-  const layoutIssues: string[] = []
-  if (totalPhrases < 3) {
-    layoutIssues.push('词句较少，建议增加内容以丰富布局层次')
+  
+  const sorted = [...positioned].sort((a, b) => {
+    if (a.position!.y !== b.position!.y) {
+      return a.position!.y - b.position!.y
+    }
+    return a.position!.x - b.position!.x
+  })
+  
+  const readingOrder = sorted.map(p => p.text)
+  
+  const xValues = sorted.map(p => p.position!.x)
+  const yValues = sorted.map(p => p.position!.y)
+  
+  const xSpread = Math.max(...xValues) - Math.min(...xValues)
+  const ySpread = Math.max(...yValues) - Math.min(...yValues)
+  const spreadScore = Math.min(100, (xSpread + ySpread) / 4)
+  
+  const areaCoverage = Math.min(100, positioned.length * 15)
+  
+  let orderScore = 100
+  const issues: string[] = []
+  
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1]
+    const curr = sorted[i]
+    
+    if (curr.position!.y < prev.position!.y - 20) {
+      orderScore -= 10
+      if (!issues.includes('词句顺序可能影响阅读流畅度')) {
+        issues.push('词句顺序可能影响阅读流畅度')
+      }
+    }
   }
-  if (spatialRhythm < 70) {
-    layoutIssues.push('空间节奏有待优化，尝试调整词句间距')
+  
+  if (positioned.length < 3) {
+    issues.push('可以添加更多词句丰富构图')
   }
-
+  
+  if (!hasPositions) {
+    issues.push('尝试拖拽调整词句位置，创造独特排版')
+  }
+  
   return {
-    hasPositions: true,
-    spatialRhythm,
-    spatialCompleteness,
-    wordOrderCoherence,
+    hasPositions,
+    spatialRhythm: Math.round(spreadScore),
+    spatialCompleteness: Math.round(areaCoverage),
+    wordOrderCoherence: Math.max(0, orderScore),
     readingOrder,
-    layoutIssues
+    layoutIssues: issues
   }
+}
+
+export const applySettlementRules = (
+  phrases: Phrase[],
+  rules: SettlementRule[]
+): { totalAdjustment: number; triggeredRules: SettlementTriggeredRule[] } | null => {
+  if (!rules || rules.length === 0) return null
+  
+  const phraseTexts = new Set(phrases.map(p => p.text))
+  const categories = new Set(phrases.map(p => p.category))
+  const triggeredRules: SettlementTriggeredRule[] = []
+  let totalAdjustment = 0
+  
+  rules.forEach(rule => {
+    const { type, params, description } = rule
+    let adjustment = 0
+    let label = params.label as string
+    
+    switch (type) {
+      case 'qualifier_bonus': {
+        const words = params.words as string[]
+        const matched = words.filter(w => phraseTexts.has(w))
+        if (matched.length > 0) {
+          adjustment = matched.length * (params.bonusPerWord as number)
+          label = `${label} (${matched.join('、')})`
+        }
+        break
+      }
+      case 'hidden_keyword_trigger': {
+        const keywords = params.keywords as string[]
+        const revealed = keywords.filter(k => phraseTexts.has(k))
+        if (revealed.length > 0) {
+          adjustment = params.bonus as number
+          label = `${label} (${revealed.join('、')})`
+        }
+        break
+      }
+      case 'forbidden_penalty': {
+        const words = params.words as string[]
+        const used = words.filter(w => phraseTexts.has(w))
+        if (used.length > 0) {
+          adjustment = -(used.length * (params.penaltyPerWord as number))
+          label = `${label} (${used.join('、')})`
+        }
+        break
+      }
+      case 'category_combo': {
+        const cats = params.categories as PhraseCategory[]
+        const minCount = params.minCount as number
+        const categoryCounts: Record<string, number> = {}
+        phrases.forEach(p => {
+          categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1
+        })
+        const allMet = cats.every(cat => (categoryCounts[cat] || 0) >= minCount)
+        if (allMet) {
+          adjustment = params.bonus as number
+        }
+        break
+      }
+      case 'all_hidden_revealed': {
+        const keywords = params.keywords as string[]
+        const allRevealed = keywords.every(k => phraseTexts.has(k))
+        if (allRevealed) {
+          adjustment = params.bonus as number
+        }
+        break
+      }
+    }
+    
+    if (adjustment !== 0) {
+      totalAdjustment += adjustment
+      triggeredRules.push({
+        type,
+        label,
+        adjustment,
+        description
+      })
+    }
+  })
+  
+  return {
+    totalAdjustment,
+    triggeredRules
+  }
+}
+
+export const extractCoreImagery = (phrases: Phrase[], limit: number = 5): string[] => {
+  if (phrases.length === 0) return []
+  
+  const categoryPriority: Record<PhraseCategory, number> = {
+    imagery: 5,
+    scene: 4,
+    emotion: 3,
+    time: 2,
+    action: 1
+  }
+  
+  const sorted = [...phrases]
+    .sort((a, b) => {
+      const priorityDiff = categoryPriority[b.category] - categoryPriority[a.category]
+      if (priorityDiff !== 0) return priorityDiff
+      return b.weight - a.weight
+    })
+  
+  return sorted.slice(0, limit).map(p => p.text)
 }

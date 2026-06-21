@@ -1,4 +1,4 @@
-import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase, Theme, ThemeState, StreakState } from '@/types'
+import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase, Theme, ThemeState, StreakState, UserActivityState, UserEntryType } from '@/types'
 import { DEFAULT_THEME_ID } from '@/data/themes'
 import { getAllPhrases, getPhraseRarity } from '@/data/phrases'
 import {
@@ -21,6 +21,7 @@ const STORAGE_KEYS = {
   COLLECTIONS: 'poem_slices_collections',
   DRAFT: 'poem_slices_draft',
   THEME_STATE: 'poem_slices_theme_state',
+  USER_ACTIVITY: 'poem_slices_user_activity',
 }
 
 export const DEFAULT_QUEST_STATE: QuestState = {
@@ -770,4 +771,117 @@ export const deleteCustomTheme = (themeId: string): void => {
 
 export const getCustomThemes = (): Theme[] => {
   return loadThemeState().customThemes
+}
+
+export const DEFAULT_USER_ACTIVITY: UserActivityState = {
+  firstVisitTime: null,
+  lastVisitTime: null,
+  totalVisits: 0,
+  totalCompositions: 0,
+  daysSinceLastVisit: 0,
+  completedChapterIds: [],
+  hasSeenTutorial: false,
+  hasDismissedWelcome: false
+}
+
+export const saveUserActivity = (state: UserActivityState): void => {
+  try {
+    const versioned = wrapWithVersion(state)
+    localStorage.setItem(STORAGE_KEYS.USER_ACTIVITY, JSON.stringify(versioned))
+  } catch (e) {
+    console.error('Failed to save user activity:', e)
+  }
+}
+
+export const loadUserActivity = (): UserActivityState => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.USER_ACTIVITY)
+    if (!raw) return { ...DEFAULT_USER_ACTIVITY }
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<UserActivityState>('userActivity', data)
+      localStorage.setItem(STORAGE_KEYS.USER_ACTIVITY, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] userActivity migrated:', migrated._migrationLog)
+      }
+      return { ...DEFAULT_USER_ACTIVITY, ...migrated.data }
+    }
+    
+    return { ...DEFAULT_USER_ACTIVITY, ...unwrapVersionedData(data) }
+  } catch (e) {
+    console.error('Failed to load user activity:', e)
+    return { ...DEFAULT_USER_ACTIVITY }
+  }
+}
+
+export const updateUserActivityOnVisit = (): UserActivityState => {
+  const state = loadUserActivity()
+  const now = Date.now()
+  
+  if (!state.firstVisitTime) {
+    state.firstVisitTime = now
+  }
+  
+  if (state.lastVisitTime) {
+    const msPerDay = 24 * 60 * 60 * 1000
+    state.daysSinceLastVisit = Math.floor((now - state.lastVisitTime) / msPerDay)
+  }
+  
+  state.lastVisitTime = now
+  state.totalVisits++
+  
+  const compositions = loadCompositions()
+  state.totalCompositions = compositions.length
+  
+  const bestScores = getAllBestScores()
+  state.completedChapterIds = Object.entries(bestScores)
+    .filter(([_, score]) => score >= 60)
+    .map(([chapterId]) => chapterId)
+  
+  saveUserActivity(state)
+  return state
+}
+
+export const determineUserEntryType = (): UserEntryType => {
+  const state = loadUserActivity()
+  const compositions = loadCompositions()
+  
+  if (compositions.length === 0 && state.totalVisits <= 1) {
+    return 'new'
+  }
+  
+  if (state.daysSinceLastVisit >= 7) {
+    return 'returning'
+  }
+  
+  return 'existing'
+}
+
+export const markTutorialSeen = (): void => {
+  const state = loadUserActivity()
+  state.hasSeenTutorial = true
+  saveUserActivity(state)
+}
+
+export const markWelcomeDismissed = (): void => {
+  const state = loadUserActivity()
+  state.hasDismissedWelcome = true
+  saveUserActivity(state)
+}
+
+export const shouldShowWelcomeModal = (): boolean => {
+  const state = loadUserActivity()
+  const entryType = determineUserEntryType()
+  
+  if (state.hasDismissedWelcome && entryType === 'existing') {
+    return false
+  }
+  
+  return entryType === 'new' || entryType === 'returning'
+}
+
+export const clearUserActivity = (): void => {
+  localStorage.removeItem(STORAGE_KEYS.USER_ACTIVITY)
 }

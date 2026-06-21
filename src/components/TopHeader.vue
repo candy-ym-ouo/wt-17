@@ -25,6 +25,7 @@ const emit = defineEmits<{
   (e: 'openQuests'): void
   (e: 'openSnapshots'): void
   (e: 'openThemes'): void
+  (e: 'openGathering'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save'): void
@@ -116,6 +117,9 @@ const emit = defineEmits<{
       <button class="icon-btn quest-btn" :class="{ 'has-quest': questCount > 0 }" @click="emit('openQuests')" title="支线任务">
         🏮
         <span v-if="questCount > 0" class="quest-badge">{{ questCount }}</span>
+      </button>
+      <button class="icon-btn gathering-btn" @click="emit('openGathering')" title="主题诗会">
+        🎑
       </button>
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺
@@ -374,6 +378,14 @@ const emit = defineEmits<{
 
 .quest-btn.has-quest {
   color: var(--accent-gold);
+}
+
+.gathering-btn {
+  position: relative;
+}
+
+.gathering-btn:hover {
+  color: #d4a574;
 }
 
 .save-btn {

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult } from '@/types'
 import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
-import { calculateScore, generatePoemTitle, generatePoemTitleOptions } from '@/utils/scoring'
+import { calculateScore, generatePoemTitle, generatePoemTitleOptions, generatePhasedGuidance } from '@/utils/scoring'
 import { getThemeById, getDefaultTheme } from '@/data/themes'
 import { loadThemeState, getCurrentThemeId, setCurrentTheme, getCustomThemes } from '@/utils/storage'
 import {
@@ -14,20 +14,26 @@ import {
   loadCollections, createCollection, deleteCollection, updateCollection,
   addCompositionToCollection, removeCompositionFromCollection,
   pinComposition, unpinComposition,
-  saveDraft, loadDraft, clearDraft, hasDraft, createDraftFromState
+  saveDraft, loadDraft, clearDraft, hasDraft, createDraftFromState,
+  updateUserActivityOnVisit, determineUserEntryType, shouldShowWelcomeModal,
+  markWelcomeDismissed, markTutorialSeen, loadUserActivity
 } from '@/utils/storage'
 import type { EditingCompositionState, DraftState, DraftSource } from '@/utils/storage'
 import type { Collection } from '@/types'
 import {
   loadQuestState, saveQuestState, unlockQuest, completeQuest, claimReward,
   isQuestUnlocked, isQuestCompleted, isRewardClaimed, addWeightBoost,
-  addChapterRewardPhrase, addEarnedTitle, collectPhrase, collectPhrases, getPhraseCollection
+  addChapterRewardPhrase, addEarnedTitle, collectPhrase, collectPhrases, getPhraseCollection,
+  getStreakState, updateStreak, getCollectedPhrasesByRarity, getCollectionCompositionStats
 } from '@/utils/storage'
 import {
   createHistoryManager, createCanvasState, createSnapshot,
   addSnapshot, deleteSnapshot, loadSnapshots, setCurrentSnapshot, renameSnapshot
 } from '@/utils/history'
 import { musicPlayer } from '@/utils/music'
+import { generateWelcomeContent } from '@/utils/onboarding'
+import { poetryGatherings, getGatheringById, getGatheringChapterById, getGatheringChapterPhrases } from '@/data/poetryGatherings'
+import { loadGatheringState, saveGatheringState, setGatheringActive, clearActiveGathering, saveChapterResult, evaluateBonusRules, claimGatheringReward, archiveGathering, isRewardClaimed as isGatheringRewardClaimed } from '@/utils/poetryGathering'
 
 import TopHeader from '@/components/TopHeader.vue'
 import PhrasePool from '@/components/PhrasePool.vue'
@@ -41,6 +47,10 @@ import SnapshotPanel from '@/components/SnapshotPanel.vue'
 import PhraseCollection from '@/components/PhraseCollection.vue'
 import ThemePanel from '@/components/ThemePanel.vue'
 import CompositionCompare from '@/components/CompositionCompare.vue'
+import WelcomeModal from '@/components/WelcomeModal.vue'
+import RecommendationTip from '@/components/RecommendationTip.vue'
+import PoetryGatheringPanel from '@/components/PoetryGatheringPanel.vue'
+import GatheringSession from '@/components/GatheringSession.vue'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -82,10 +92,15 @@ const showCollection = ref(false)
 const showSaveDialog = ref(false)
 const showQuestPanel = ref(false)
 const showSnapshotPanel = ref(false)
-const showComparePanel = ref(false)
-const compareCompositions = ref<[Composition, Composition] | null>(null)
 const justUnlockedChapter = ref<string | null>(null)
 const questState = ref<QuestState>(loadQuestState())
+
+const userActivity = ref<UserActivityState>(loadUserActivity())
+const userEntryType = ref<UserEntryType>('existing')
+const welcomeContent = ref<WelcomeContent | null>(null)
+const showWelcomeModal = ref(false)
+const showRecommendationTip = ref(false)
+const currentRecommendations = ref<RecommendationAction[]>([])
 
 const snapshotStorage = ref(loadSnapshots())
 const editingComposition = ref<EditingCompositionState>(loadEditingComposition())
@@ -96,6 +111,14 @@ const showDraftRestoreDialog = ref(false)
 const pendingDraft = ref<DraftState | null>(null)
 const lastAutoSaveTime = ref<number>(0)
 const autoSaveInterval = 30000
+
+const gatheringState = ref<GatheringState>(loadGatheringState())
+const showGatheringPanel = ref(false)
+const showGatheringSession = ref(false)
+const activeGatheringId = ref<string | null>(null)
+const activeGatheringChapterId = ref<string | null>(null)
+const gatheringBoardPhrases = ref<Phrase[]>([])
+const gatheringElapsedSeconds = ref(0)
 
 let autoSaveTimer: number | null = null
 
@@ -362,55 +385,46 @@ const currentChapter = computed((): Chapter | null => {
 
 const placedPhraseIds = computed(() => new Set(boardPhrases.value.map(p => p.id)))
 
+const phrasesForScoring = computed((): Phrase[] => {
+  return boardPhrases.value.map(p => ({
+    id: p.id,
+    text: p.text,
+    category: p.category,
+    position: p.position,
+    rotation: p.rotation,
+    isPlaced: p.isPlaced,
+    weight: p.weight,
+    rarity: p.rarity,
+    source: p.source
+  }))
+})
+
 const score = computed<ScoreBreakdown>((): ScoreBreakdown => {
   if (!currentChapter.value) {
     return { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 }
   }
-  const phrases = boardPhrases.value.map(p => ({
-    id: p.id,
-    text: p.text,
-    category: p.category,
-    position: p.position,
-    rotation: p.rotation,
-    isPlaced: p.isPlaced,
-    weight: p.weight,
-    rarity: p.rarity,
-    source: p.source
-  }))
   const theme = isFreeRealm.value ? currentTheme.value : undefined
-  return calculateScore(phrases, currentChapter.value, questState.value.activeWeightBoosts, theme)
+  return calculateScore(phrasesForScoring.value, currentChapter.value, questState.value.activeWeightBoosts, theme)
+})
+
+const phasedGuidance = computed<PhasedGuidance | null>(() => {
+  if (!currentChapter.value) return null
+  return generatePhasedGuidance(
+    phrasesForScoring.value,
+    currentChapter.value,
+    score.value,
+    currentChapter.value.targetPhraseCount
+  )
 })
 
 const poemTitle = computed(() => {
-  const phrases = boardPhrases.value.map(p => ({
-    id: p.id,
-    text: p.text,
-    category: p.category,
-    position: p.position,
-    rotation: p.rotation,
-    isPlaced: p.isPlaced,
-    weight: p.weight,
-    rarity: p.rarity,
-    source: p.source
-  }))
   const theme = isFreeRealm.value ? currentTheme.value : undefined
-  return generatePoemTitle(phrases, theme, currentChapter.value || undefined)
+  return generatePoemTitle(phrasesForScoring.value, theme, currentChapter.value || undefined)
 })
 
 const poemTitleOptions = computed((): TitleOption[] => {
-  const phrases = boardPhrases.value.map(p => ({
-    id: p.id,
-    text: p.text,
-    category: p.category,
-    position: p.position,
-    rotation: p.rotation,
-    isPlaced: p.isPlaced,
-    weight: p.weight,
-    rarity: p.rarity,
-    source: p.source
-  }))
   const theme = isFreeRealm.value ? currentTheme.value : undefined
-  return generatePoemTitleOptions(phrases, theme, currentChapter.value || undefined)
+  return generatePoemTitleOptions(phrasesForScoring.value, theme, currentChapter.value || undefined)
 })
 
 const unlockedChapterIds = computed(() => {
@@ -666,6 +680,9 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
 
   const phraseTexts = phrases.map(p => p.text)
   const { newlyCollected } = collectPhrases(phraseTexts, currentChapterId.value)
+  
+  updateStreak(score.value.total, 60)
+  
   questState.value = loadQuestState()
 
   if (currentChapter.value && score.value.total >= 60) {
@@ -800,31 +817,6 @@ const handleRefreshPortfolio = () => {
   collections.value = loadCollections()
 }
 
-const handleStartCompare = (comps: [Composition, Composition]) => {
-  compareCompositions.value = comps
-  showComparePanel.value = true
-  showPortfolio.value = false
-  musicPlayer.playPluckSound()
-}
-
-const handleCloseCompare = () => {
-  showComparePanel.value = false
-  compareCompositions.value = null
-}
-
-const handleSwapCompare = () => {
-  if (compareCompositions.value) {
-    compareCompositions.value = [compareCompositions.value[1], compareCompositions.value[0]]
-    musicPlayer.playPluckSound()
-  }
-}
-
-const handleLoadFromCompare = (comp: Composition) => {
-  handleLoadComposition(comp)
-  showComparePanel.value = false
-  compareCompositions.value = null
-}
-
 const handleNextChapter = () => {
   showSaveDialog.value = false
   if (justUnlockedChapter.value) {
@@ -916,6 +908,55 @@ const checkCondition = (condition: QuestCondition, ctx: { compositions: Composit
     case 'category_diversity': {
       const categories = new Set(ctx.boardPhrases.map(p => p.category))
       return categories.size >= (params.minCategories as number)
+    }
+    case 'win_streak': {
+      const streak = getStreakState()
+      const minStreak = params.minStreak as number
+      const streakType = params.streakType as 'current' | 'best' | undefined
+      if (streakType === 'best') {
+        return streak.bestStreak >= minStreak
+      }
+      return streak.currentStreak >= minStreak
+    }
+    case 'phrase_collection_count': {
+      const minCount = params.minCount as number
+      const collection = getPhraseCollection()
+      return collection.totalCollected >= minCount
+    }
+    case 'phrase_collection_rarity': {
+      const rarity = params.rarity as string
+      const minCount = params.minCount as number
+      const counts = getCollectedPhrasesByRarity()
+      return (counts[rarity] || 0) >= minCount
+    }
+    case 'rarity_combo': {
+      const rarities = params.rarities as string[]
+      const boardRarities = new Set(ctx.boardPhrases.map(p => p.rarity))
+      return rarities.every(r => boardRarities.has(r as any))
+    }
+    case 'all_chapters_score': {
+      const minScore = params.minScore as number
+      const bestScores = getAllBestScores()
+      const unlockedChapterIds = chapters
+        .filter(ch => isChapterUnlocked(ch.id) || ch.unlocked)
+        .map(ch => ch.id)
+      
+      if (unlockedChapterIds.length === 0) return false
+      
+      return unlockedChapterIds.every(id => {
+        const chapterBest = bestScores[id] || 0
+        return chapterBest >= minScore
+      })
+    }
+    case 'collection_composition_count': {
+      const minCount = params.minCount as number
+      const stats = getCollectionCompositionStats()
+      return stats.totalInCollections >= minCount
+    }
+    case 'perfect_clear': {
+      const targetChapter = params.chapterId as string
+      const chapterComps = ctx.compositions.filter(c => c.chapterId === targetChapter)
+      return chapterComps.some(c => c.score.total >= 95)
     }
     default:
       return false
@@ -1031,6 +1072,276 @@ const handleFirstInteraction = () => {
   }
 }
 
+const initializeUserEntry = () => {
+  userActivity.value = updateUserActivityOnVisit()
+  userEntryType.value = determineUserEntryType()
+  
+  if (shouldShowWelcomeModal()) {
+    const entryType = userEntryType.value === 'existing' ? 'new' : userEntryType.value as 'new' | 'returning'
+    welcomeContent.value = generateWelcomeContent(entryType, userActivity.value)
+    currentRecommendations.value = welcomeContent.value.recommendations
+    showWelcomeModal.value = true
+  }
+}
+
+const handleWelcomeClose = () => {
+  showWelcomeModal.value = false
+  markWelcomeDismissed()
+  
+  if (userEntryType.value === 'new') {
+    showRecommendationTip.value = true
+    setTimeout(() => {
+      showRecommendationTip.value = false
+    }, 60000)
+  }
+}
+
+const handleWelcomeStart = (chapterId: string) => {
+  showWelcomeModal.value = false
+  markWelcomeDismissed()
+  markTutorialSeen()
+  
+  if (chapterId !== currentChapterId.value) {
+    handleSelectChapter(chapterId)
+  }
+  
+  if (userEntryType.value === 'new') {
+    showRecommendationTip.value = true
+    setTimeout(() => {
+      showRecommendationTip.value = false
+    }, 60000)
+  }
+  
+  musicPlayer.playPluckSound()
+}
+
+const handleSelectRecommendation = (rec: RecommendationAction) => {
+  if (rec.type === 'chapter' && rec.targetId) {
+    handleWelcomeStart(rec.targetId)
+  } else if (rec.type === 'phrase' && rec.phrase) {
+    showWelcomeModal.value = false
+    markWelcomeDismissed()
+    canvasBoardRef.value?.addPhrase(rec.phrase)
+    musicPlayer.playPluckSound()
+  } else if (rec.type === 'quest') {
+    showWelcomeModal.value = false
+    markWelcomeDismissed()
+    showQuestPanel.value = true
+  } else if (rec.type === 'theme' && rec.targetId) {
+    showWelcomeModal.value = false
+    markWelcomeDismissed()
+    handleSelectChapter(rec.targetId)
+  }
+}
+
+const handleTipSelectPhrase = (phrase: Phrase) => {
+  canvasBoardRef.value?.addPhrase(phrase)
+  musicPlayer.playPluckSound()
+}
+
+const handleTipSelectChapter = (chapterId: string) => {
+  handleSelectChapter(chapterId)
+}
+
+const handleTipDismiss = () => {
+  showRecommendationTip.value = false
+}
+
+const activeGathering = computed(() => {
+  if (!activeGatheringId.value) return null
+  return getGatheringById(activeGatheringId.value) || null
+})
+
+const activeGatheringChapter = computed(() => {
+  if (!activeGatheringId.value || !activeGatheringChapterId.value) return null
+  return getGatheringChapterById(activeGatheringId.value, activeGatheringChapterId.value) || null
+})
+
+const gatheringPhrases = computed((): Phrase[] => {
+  if (!activeGatheringId.value || !activeGatheringChapterId.value) return []
+  return getGatheringChapterPhrases(activeGatheringId.value, activeGatheringChapterId.value)
+})
+
+const gatheringScore = computed<ScoreBreakdown>(() => {
+  if (!activeGatheringChapter.value || gatheringBoardPhrases.value.length === 0) {
+    return { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 }
+  }
+  const chapter = activeGatheringChapter.value
+  const fakeChapter: Chapter = {
+    id: `gathering_${chapter.id}`,
+    title: chapter.title,
+    subtitle: '',
+    description: chapter.description,
+    theme: chapter.theme,
+    backgroundGradient: '',
+    accentColor: activeGathering.value?.accentColor || '#c9a86c',
+    phrases: gatheringPhrases.value,
+    unlocked: true,
+    targetPhraseCount: chapter.targetPhraseCount,
+    hint: chapter.description,
+    qualifierWords: chapter.requiredKeywords,
+    forbiddenWords: chapter.forbiddenWords
+  }
+  return calculateScore(gatheringBoardPhrases.value, fakeChapter, questState.value.activeWeightBoosts)
+})
+
+const handleStartGatheringChapter = (gatheringId: string, chapterId: string) => {
+  activeGatheringId.value = gatheringId
+  activeGatheringChapterId.value = chapterId
+  gatheringBoardPhrases.value = []
+  gatheringElapsedSeconds.value = 0
+  setGatheringActive(gatheringId)
+  showGatheringPanel.value = false
+  showGatheringSession.value = true
+  musicPlayer.playPluckSound()
+}
+
+const handleGatheringSelectPhrase = (phrase: Phrase) => {
+  if (gatheringBoardPhrases.value.find(p => p.id === phrase.id)) return
+  gatheringBoardPhrases.value.push(phrase)
+  musicPlayer.playPluckSound()
+}
+
+const handleGatheringRemovePhrase = (phraseId: string) => {
+  gatheringBoardPhrases.value = gatheringBoardPhrases.value.filter(p => p.id !== phraseId)
+}
+
+const handleGatheringSubmit = () => {
+  if (!activeGatheringId.value || !activeGatheringChapterId.value) return
+  const chapter = activeGatheringChapter.value
+  if (!chapter) return
+
+  const bonusResult = evaluateBonusRules(gatheringBoardPhrases.value, chapter.bonusRules, gatheringElapsedSeconds.value)
+  const finalScore = gatheringScore.value.total + bonusResult.totalBonus
+
+  const now = Date.now()
+  const result: GatheringChapterResult = {
+    chapterId: activeGatheringChapterId.value,
+    gatheringId: activeGatheringId.value,
+    compositionId: `gcomp_${now}`,
+    score: gatheringScore.value.total,
+    timeUsedSeconds: gatheringElapsedSeconds.value,
+    completedAt: now,
+    bonusAdjustment: bonusResult.totalBonus,
+    triggeredBonuses: bonusResult.triggeredLabels
+  }
+  saveChapterResult(result)
+  gatheringState.value = loadGatheringState()
+
+  const composition: Composition = {
+    id: result.compositionId,
+    chapterId: `gathering_${activeGatheringChapterId.value}`,
+    phrases: gatheringBoardPhrases.value.map(p => ({
+      id: p.id,
+      text: p.text,
+      category: p.category,
+      position: p.position,
+      rotation: p.rotation,
+      isPlaced: p.isPlaced,
+      weight: p.weight,
+      rarity: p.rarity,
+      source: p.source
+    })),
+    score: { ...gatheringScore.value, total: finalScore },
+    createdAt: now,
+    updatedAt: now,
+    title: `${activeGathering.value?.title || '诗会'}·${chapter.title}`
+  }
+  saveComposition(composition)
+  compositions.value = loadCompositions()
+
+  const phraseTexts = gatheringBoardPhrases.value.map(p => p.text)
+  collectPhrases(phraseTexts)
+  questState.value = loadQuestState()
+
+  musicPlayer.playSaveChime()
+  showGatheringSession.value = false
+  showGatheringPanel.value = true
+  activeGatheringId.value = null
+  activeGatheringChapterId.value = null
+  gatheringBoardPhrases.value = []
+}
+
+const handleGatheringQuit = () => {
+  showGatheringSession.value = false
+  activeGatheringId.value = null
+  activeGatheringChapterId.value = null
+  gatheringBoardPhrases.value = []
+  clearActiveGathering()
+}
+
+const handleClaimGatheringReward = (gatheringId: string, tier: string) => {
+  const gathering = getGatheringById(gatheringId)
+  if (!gathering) return
+  const reward = gathering.rewards.find(r => r.tier === tier)
+  if (!reward || isGatheringRewardClaimed(gatheringId, tier)) return
+
+  reward.rewards.forEach(item => {
+    switch (item.type) {
+      case 'phrase_unlock': {
+        const texts = item.params.phraseTexts as string[]
+        texts.forEach(text => {
+          const phrase = createRewardPhrase(text)
+          if (phrase) {
+            addChapterRewardPhrase(gathering.chapters[0]?.id || 'ch1', phrase)
+            collectPhrase(text, undefined, `gathering_${gatheringId}`)
+          }
+        })
+        break
+      }
+      case 'title_reward': {
+        addEarnedTitle(item.params.title as string)
+        break
+      }
+      case 'score_weight_boost': {
+        addWeightBoost(item.params.dimension as string, item.params.boost as number)
+        break
+      }
+      case 'phrase_pool_refresh': {
+        const targetChapterId = item.params.chapterId as string
+        const category = item.params.addCategory as PhraseCategory
+        const count = item.params.count as number
+        const refreshed = refreshPoolByCategory(category, count)
+        if (targetChapterId === '__all__') {
+          chapters.forEach(ch => {
+            refreshed.forEach(p => {
+              addChapterRewardPhrase(ch.id, { ...p, id: `${p.id}_${ch.id}` })
+            })
+          })
+        } else {
+          refreshed.forEach(p => {
+            addChapterRewardPhrase(targetChapterId, p)
+          })
+        }
+        break
+      }
+    }
+  })
+
+  claimGatheringReward(gatheringId, tier)
+  gatheringState.value = loadGatheringState()
+  questState.value = loadQuestState()
+  musicPlayer.playSuccessSound()
+}
+
+const handleArchiveGathering = (gatheringId: string) => {
+  const gathering = getGatheringById(gatheringId)
+  if (!gathering) return
+  const collectionId = archiveGathering(gatheringId, gathering.title)
+  gatheringState.value = loadGatheringState()
+  collections.value = loadCollections()
+
+  const gatheringComps = compositions.value.filter(c =>
+    c.chapterId.startsWith(`gathering_${gatheringId}`)
+  )
+  gatheringComps.forEach(comp => {
+    addCompositionToCollection(comp.id, collectionId)
+  })
+  compositions.value = loadCompositions()
+  collections.value = loadCollections()
+  musicPlayer.playSuccessSound()
+}
+
 onMounted(() => {
   document.addEventListener('click', handleFirstInteraction, { once: true })
   document.addEventListener('touchstart', handleFirstInteraction, { once: true, passive: true })
@@ -1042,6 +1353,8 @@ onMounted(() => {
     pendingDraft.value = draft
     showDraftRestoreDialog.value = true
   }
+  
+  initializeUserEntry()
   
   pushToHistory()
   checkQuestUnlocks()
@@ -1098,6 +1411,7 @@ watch(currentChapterId, (newId) => {
       @openQuests="showQuestPanel = true"
       @openSnapshots="showSnapshotPanel = true"
       @openThemes="showThemePanel = true"
+      @openGathering="showGatheringPanel = true"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -1106,10 +1420,59 @@ watch(currentChapterId, (newId) => {
     
     <main class="main-content">
       <div class="left-panel">
-        <div v-if="currentChapter" class="chapter-info">
-          <div class="chapter-hint">
-            <span class="hint-icon">✦</span>
-            <span class="hint-text">{{ currentChapter.hint }}</span>
+        <div v-if="phasedGuidance" class="chapter-info" :class="`tone-${phasedGuidance.accentTone}`">
+          <div class="phased-guidance">
+            <div class="guidance-header">
+              <div class="guidance-stage">
+                <span class="stage-icon" :class="`icon-${phasedGuidance.countPhase}`">{{ phasedGuidance.stageIcon }}</span>
+                <span class="stage-label">{{ phasedGuidance.stageLabel }}</span>
+              </div>
+              <div class="guidance-progress-mini">
+                <span class="progress-count">{{ phasedGuidance.progress.current }}/{{ phasedGuidance.progress.target }}</span>
+                <div class="mini-progress-track">
+                  <div 
+                    class="mini-progress-fill"
+                    :style="{ width: Math.min(phasedGuidance.progress.percentage, 100) + '%' }"
+                  ></div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="guidance-headline">
+              {{ phasedGuidance.headline }}
+            </div>
+            
+            <div class="guidance-suggestions">
+              <div class="suggestion-primary">
+                <span class="suggestion-arrow">❯</span>
+                <span class="suggestion-text">{{ phasedGuidance.primarySuggestion }}</span>
+              </div>
+              <transition name="expand">
+                <div v-if="phasedGuidance.secondarySuggestion" class="suggestion-secondary">
+                  <span class="suggestion-dot">·</span>
+                  <span class="suggestion-text">{{ phasedGuidance.secondarySuggestion }}</span>
+                </div>
+              </transition>
+            </div>
+            
+            <div v-if="phasedGuidance.progress.current > 0" class="guidance-categories">
+              <div 
+                v-for="insight in phasedGuidance.categoryInsights.filter(i => i.count > 0)"
+                :key="insight.category"
+                class="category-chip"
+                :class="`status-${insight.status}`"
+                :title="`${insight.label} ${insight.count}个，占${Math.round(insight.percentage * 100)}%`"
+              >
+                <span class="chip-label">{{ insight.label }}</span>
+                <span class="chip-count">{{ insight.count }}</span>
+              </div>
+            </div>
+            
+            <div v-if="phasedGuidance.encouragement && phasedGuidance.progress.current > 0" class="guidance-encouragement">
+              <span class="enc-quote">「</span>
+              <span class="enc-text">{{ phasedGuidance.encouragement }}</span>
+              <span class="enc-quote">」</span>
+            </div>
           </div>
         </div>
         
@@ -1133,17 +1496,7 @@ watch(currentChapterId, (newId) => {
             :phrasesCount="boardPhrases.length"
             :targetCount="currentChapter?.targetPhraseCount || 5"
             :weightBoosts="questState.activeWeightBoosts"
-            :phrases="boardPhrases.map(p => ({
-              id: p.id,
-              text: p.text,
-              category: p.category,
-              position: p.position,
-              rotation: p.rotation,
-              isPlaced: p.isPlaced,
-              weight: p.weight,
-              rarity: p.rarity,
-              source: p.source
-            }))"
+            :phrases="phrasesForScoring"
             :chapter="currentChapter"
           />
         </div>
@@ -1203,7 +1556,6 @@ watch(currentChapterId, (newId) => {
       @deleteCollection="handleDeleteCollection"
       @updateCollection="handleUpdateCollection"
       @refresh="handleRefreshPortfolio"
-      @startCompare="handleStartCompare"
     />
     
     <SaveDialog
@@ -1257,15 +1609,6 @@ watch(currentChapterId, (newId) => {
       @themesChanged="handleThemesChanged"
     />
     
-    <CompositionCompare
-      v-if="showComparePanel && compareCompositions"
-      :compositions="compareCompositions"
-      :chaptersTitles="chaptersTitles"
-      @close="handleCloseCompare"
-      @load="handleLoadFromCompare"
-      @swap="handleSwapCompare"
-    />
-    
     <div v-if="showDraftRestoreDialog && pendingDraft" class="draft-restore-overlay" @click.self="discardDraft">
       <div class="draft-restore-dialog">
         <div class="draft-restore-header">
@@ -1290,6 +1633,48 @@ watch(currentChapterId, (newId) => {
         </div>
       </div>
     </div>
+    
+    <WelcomeModal
+      v-if="showWelcomeModal && welcomeContent"
+      :visible="showWelcomeModal"
+      :content="welcomeContent"
+      :entry-type="userEntryType === 'returning' ? 'returning' : 'new'"
+      @close="handleWelcomeClose"
+      @start="handleWelcomeStart"
+      @select-recommendation="handleSelectRecommendation"
+    />
+    
+    <RecommendationTip
+      :visible="showRecommendationTip && boardPhrases.length === 0"
+      :chapter-id="currentChapterId"
+      :recommendations="currentRecommendations"
+      @select-phrase="handleTipSelectPhrase"
+      @select-chapter="handleTipSelectChapter"
+      @dismiss="handleTipDismiss"
+    />
+    
+    <PoetryGatheringPanel
+      v-if="showGatheringPanel"
+      :gatherings="poetryGatherings"
+      :gatheringState="gatheringState"
+      @close="showGatheringPanel = false"
+      @startChapter="handleStartGatheringChapter"
+      @claimReward="handleClaimGatheringReward"
+      @archive="handleArchiveGathering"
+    />
+    
+    <GatheringSession
+      v-if="showGatheringSession && activeGatheringChapter"
+      :chapter="activeGatheringChapter"
+      :gatheringAccentColor="activeGathering?.accentColor || '#c9a86c'"
+      :phrases="gatheringPhrases"
+      :score="gatheringScore"
+      :boardPhrases="gatheringBoardPhrases"
+      @selectPhrase="handleGatheringSelectPhrase"
+      @removePhrase="handleGatheringRemovePhrase"
+      @submit="handleGatheringSubmit"
+      @quit="handleGatheringQuit"
+    />
     
     <div class="bg-decoration">
       <div class="deco-line" style="top: 10%; left: 5%;"></div>
@@ -1358,28 +1743,294 @@ watch(currentChapterId, (newId) => {
 
 .chapter-info {
   flex-shrink: 0;
+  transition: all 0.4s ease;
 }
 
-.chapter-hint {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
+.chapter-info.tone-cold {
+  --tone-color: #5b7a8c;
+  --tone-bg: rgba(91, 122, 140, 0.08);
+  --tone-border: rgba(91, 122, 140, 0.25);
+}
+
+.chapter-info.tone-warm {
+  --tone-color: #c9956c;
+  --tone-bg: rgba(201, 149, 108, 0.08);
+  --tone-border: rgba(201, 149, 108, 0.25);
+}
+
+.chapter-info.tone-jade {
+  --tone-color: #6b8e6b;
+  --tone-bg: rgba(107, 142, 107, 0.08);
+  --tone-border: rgba(107, 142, 107, 0.25);
+}
+
+.chapter-info.tone-violet {
+  --tone-color: #a87ac9;
+  --tone-bg: rgba(168, 122, 201, 0.08);
+  --tone-border: rgba(168, 122, 201, 0.25);
+}
+
+.chapter-info.tone-gold {
+  --tone-color: #c9a86c;
+  --tone-bg: rgba(201, 168, 108, 0.1);
+  --tone-border: rgba(201, 168, 108, 0.35);
+}
+
+.phased-guidance {
+  padding: 14px 16px;
   background: var(--bg-card);
   backdrop-filter: blur(10px);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 1px solid var(--tone-border, var(--border));
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.4s ease;
+  position: relative;
+  overflow: hidden;
 }
 
-.hint-icon {
-  color: var(--accent-gold);
+.phased-guidance::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--tone-bg, transparent) 0%, transparent 60%);
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.phased-guidance > * {
+  position: relative;
+}
+
+.guidance-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.guidance-stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stage-icon {
   font-size: 14px;
+  color: var(--tone-color, var(--accent-gold));
+  transition: transform 0.3s ease;
 }
 
-.hint-text {
-  font-size: 13px;
+.stage-icon.icon-early {
+  animation: pulse-soft 3s ease-in-out infinite;
+}
+
+.stage-icon.icon-building {
+  animation: pulse-soft 2.5s ease-in-out infinite;
+}
+
+.stage-icon.icon-sufficient {
+  animation: glow 2s ease-in-out infinite;
+}
+
+.stage-icon.icon-exceed {
+  animation: spin-slow 4s linear infinite;
+}
+
+.stage-label {
+  font-size: 11px;
+  color: var(--tone-color, var(--text-muted));
+  font-family: var(--font-serif);
+  letter-spacing: 2px;
+  font-weight: 500;
+}
+
+.guidance-progress-mini {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 100px;
+}
+
+.progress-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.mini-progress-track {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mini-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--tone-color, var(--accent-gold)), var(--tone-color, var(--accent-gold)));
+  border-radius: 2px;
+  transition: width 0.5s ease;
+  opacity: 0.8;
+}
+
+.guidance-headline {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--text-primary);
+  font-weight: 500;
+  letter-spacing: 1px;
+  line-height: 1.5;
+}
+
+.guidance-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.suggestion-primary,
+.suggestion-secondary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.suggestion-arrow {
+  color: var(--tone-color, var(--accent-gold));
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.suggestion-dot {
+  color: var(--text-muted);
+  font-size: 16px;
+  flex-shrink: 0;
+  line-height: 0.8;
+  margin-left: 2px;
+}
+
+.suggestion-primary .suggestion-text {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  font-family: var(--font-serif);
+}
+
+.suggestion-secondary .suggestion-text {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  font-family: var(--font-serif);
+}
+
+.guidance-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-size: 10.5px;
+  font-family: var(--font-serif);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.2s ease;
+}
+
+.category-chip.status-balanced {
+  background: rgba(107, 142, 107, 0.1);
+  border-color: rgba(107, 142, 107, 0.25);
+  color: #8ab88a;
+}
+
+.category-chip.status-excess {
+  background: rgba(201, 101, 101, 0.1);
+  border-color: rgba(201, 101, 101, 0.25);
+  color: #e89090;
+}
+
+.category-chip.status-deficit {
+  background: rgba(201, 168, 108, 0.1);
+  border-color: rgba(201, 168, 108, 0.25);
+  color: var(--accent-gold);
+}
+
+.category-chip:not([class*="status-"]) {
+  color: var(--text-secondary);
+}
+
+.chip-label {
+  font-weight: 500;
+}
+
+.chip-count {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.guidance-encouragement {
+  text-align: center;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 2px;
+  padding: 8px 4px 0;
+}
+
+.enc-quote {
+  color: var(--tone-color, var(--accent-gold));
+  font-family: var(--font-brush);
+  font-size: 14px;
+  margin: 0 2px;
+  opacity: 0.8;
+}
+
+.enc-text {
+  font-size: 11.5px;
   color: var(--text-secondary);
   font-family: var(--font-serif);
+  letter-spacing: 0.5px;
+  line-height: 1.7;
+  opacity: 0.9;
+}
+
+.expand-enter-active,
+.expand-leave-active {
+  transition: all 0.3s ease;
+  overflow: hidden;
+  opacity: 1;
+}
+
+.expand-enter-from,
+.expand-leave-to {
+  opacity: 0;
+  max-height: 0;
+  transform: translateY(-4px);
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+@keyframes glow {
+  0%, 100% { filter: drop-shadow(0 0 2px var(--tone-color, var(--accent-gold))); }
+  50% { filter: drop-shadow(0 0 6px var(--tone-color, var(--accent-gold))); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .board-wrapper {

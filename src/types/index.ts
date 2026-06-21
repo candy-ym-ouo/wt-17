@@ -157,6 +157,9 @@ export interface Composition {
   isPinned?: boolean
   pinnedAt?: number
   collectionIds?: string[]
+  creationDuration?: number
+  coreImagery?: string[]
+  editCount?: number
 }
 
 export interface Collection {
@@ -218,6 +221,13 @@ export type QuestConditionType =
   | 'composition_count'
   | 'chapter_count'
   | 'category_diversity'
+  | 'win_streak'
+  | 'phrase_collection_count'
+  | 'phrase_collection_rarity'
+  | 'rarity_combo'
+  | 'all_chapters_score'
+  | 'collection_composition_count'
+  | 'perfect_clear'
 
 export interface QuestCondition {
   type: QuestConditionType
@@ -260,6 +270,13 @@ export interface PhraseCollectionState {
   totalCollected: number
 }
 
+export interface StreakState {
+  currentStreak: number
+  bestStreak: number
+  lastCompositionTime: number | null
+  lastScore: number | null
+}
+
 export interface QuestState {
   unlockedQuests: string[]
   completedQuests: string[]
@@ -268,6 +285,7 @@ export interface QuestState {
   activeWeightBoosts: Record<string, number>
   chapterRewardPhrases: Record<string, Phrase[]>
   phraseCollection: PhraseCollectionState
+  streak: StreakState
 }
 
 export interface ScoreWeights {
@@ -396,4 +414,170 @@ export interface TitleOption {
   description: string
   keywords: string[]
   score: number
+}
+
+export type CountPhase = 'empty' | 'early' | 'building' | 'sufficient' | 'exceed'
+export type ScorePhase = 'unstarted' | 'nascent' | 'forming' | 'refining' | 'polishing' | 'masterpiece'
+export type CategoryPhase = 'mono' | 'dual' | 'varied' | 'balanced'
+
+export interface CategoryInsight {
+  category: PhraseCategory
+  label: string
+  count: number
+  percentage: number
+  idealPercentage: number
+  status: 'balanced' | 'excess' | 'deficit' | 'none'
+}
+
+export interface PhasedGuidance {
+  countPhase: CountPhase
+  scorePhase: ScorePhase
+  categoryPhase: CategoryPhase
+  progress: {
+    current: number
+    target: number
+    percentage: number
+  }
+  categoryInsights: CategoryInsight[]
+  headline: string
+  primarySuggestion: string
+  secondarySuggestion?: string
+  categorySuggestion?: string
+  scoreSuggestion?: string
+  countSuggestion?: string
+  encouragement: string
+  stageLabel: string
+  stageIcon: string
+  accentTone: 'cold' | 'warm' | 'gold' | 'jade' | 'violet'
+}
+
+export type UserEntryType = 'new' | 'returning' | 'existing'
+
+export interface UserActivityState {
+  firstVisitTime: number | null
+  lastVisitTime: number | null
+  totalVisits: number
+  totalCompositions: number
+  daysSinceLastVisit: number
+  completedChapterIds: string[]
+  hasSeenTutorial: boolean
+  hasDismissedWelcome: boolean
+}
+
+export interface GuideStep {
+  id: string
+  title: string
+  description: string
+  icon: string
+  highlight?: string
+  action?: {
+    type: 'highlight' | 'click' | 'auto'
+    target?: string
+  }
+}
+
+export interface RecommendationAction {
+  id: string
+  type: 'chapter' | 'phrase' | 'quest' | 'theme'
+  title: string
+  description: string
+  icon: string
+  priority: number
+  targetId?: string
+  phrase?: Phrase
+  isRecommended: boolean
+}
+
+export interface WelcomeContent {
+  title: string
+  subtitle: string
+  description: string
+  icon: string
+  accentColor: string
+  steps: GuideStep[]
+  recommendations: RecommendationAction[]
+  defaultChapterId: string
+}
+
+export type GatheringStatus = 'upcoming' | 'active' | 'settling' | 'archived'
+
+export interface GatheringChapter {
+  id: string
+  title: string
+  description: string
+  theme: string
+  timeLimitSeconds: number
+  targetPhraseCount: number
+  requiredKeywords: string[]
+  forbiddenWords: string[]
+  bonusRules: GatheringBonusRule[]
+}
+
+export interface GatheringBonusRule {
+  type: 'keyword_combo' | 'category_balance' | 'speed_bonus' | 'rare_phrase'
+  label: string
+  description: string
+  bonus: number
+  params: Record<string, any>
+}
+
+export interface GatheringReward {
+  tier: 'bronze' | 'silver' | 'gold' | 'platinum'
+  minScore: number
+  minChaptersCleared: number
+  rewards: GatheringRewardItem[]
+}
+
+export interface GatheringRewardItem {
+  type: 'phrase_unlock' | 'title_reward' | 'score_weight_boost' | 'phrase_pool_refresh'
+  params: Record<string, any>
+}
+
+export interface PoetryGathering {
+  id: string
+  title: string
+  subtitle: string
+  description: string
+  icon: string
+  accentColor: string
+  status: GatheringStatus
+  startDate: number
+  endDate: number
+  chapters: GatheringChapter[]
+  rewards: GatheringReward[]
+  archiveCollectionId?: string
+}
+
+export interface GatheringChapterResult {
+  chapterId: string
+  gatheringId: string
+  compositionId: string
+  score: number
+  timeUsedSeconds: number
+  completedAt: number
+  bonusAdjustment: number
+  triggeredBonuses: string[]
+}
+
+export interface GatheringRankEntry {
+  rank: number
+  totalScore: number
+  chaptersCleared: number
+  bestChapterResults: Record<string, GatheringChapterResult>
+}
+
+export interface GatheringState {
+  activeGatheringId: string | null
+  chapterResults: Record<string, GatheringChapterResult[]>
+  claimedRewards: Record<string, string[]>
+  archivedGatheringIds: string[]
+}
+
+export interface GatheringSessionState {
+  gatheringId: string
+  chapterId: string
+  startTime: number
+  elapsedSeconds: number
+  isPaused: boolean
+  isComplete: boolean
 }

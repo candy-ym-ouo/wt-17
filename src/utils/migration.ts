@@ -24,6 +24,8 @@ export type StorageDataType =
   | 'snapshots'
   | 'draft'
   | 'editingComposition'
+  | 'userActivity'
+  | 'gatheringState'
 
 export interface VersionedData<T> {
   _schemaVersion: number
@@ -365,6 +367,25 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
       },
     },
   ],
+  userActivity: [
+    {
+      targetVersion: 1,
+      description: '回填缺失的用户活动字段',
+      migrate: (data: any) => {
+        return {
+          firstVisitTime: data.firstVisitTime ?? null,
+          lastVisitTime: data.lastVisitTime ?? null,
+          totalVisits: data.totalVisits ?? 0,
+          totalCompositions: data.totalCompositions ?? 0,
+          daysSinceLastVisit: data.daysSinceLastVisit ?? 0,
+          completedChapterIds: data.completedChapterIds ?? [],
+          hasSeenTutorial: data.hasSeenTutorial ?? false,
+          hasDismissedWelcome: data.hasDismissedWelcome ?? false,
+        }
+      },
+    },
+  ],
+  gatheringState: [],
 }
 
 function fillSourceGaps(source: PhraseSource | undefined | null, chapterId: string): PhraseSource {
@@ -593,6 +614,8 @@ export function getMigrationStatus(): Record<StorageDataType, { current: number;
     snapshots: 'poem_slices_snapshots',
     draft: 'poem_slices_draft',
     editingComposition: 'poem_slices_editing_composition',
+    userActivity: 'poem_slices_user_activity',
+    gatheringState: 'poem_slices_gathering_state',
   }
 
   const types: StorageDataType[] = [
@@ -604,6 +627,7 @@ export function getMigrationStatus(): Record<StorageDataType, { current: number;
     'snapshots',
     'draft',
     'editingComposition',
+    'userActivity',
   ]
 
   types.forEach(type => {
