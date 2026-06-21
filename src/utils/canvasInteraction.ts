@@ -69,55 +69,78 @@ export const snapToEdges = (
   threshold: number = SNAP_EDGE_THRESHOLD
 ): SnapResult => {
   const draggingRect = getPhraseRect({ ...draggingPhrase, position: { x: targetX, y: targetY } }, ctx)
-  const draggingCenterX = targetX
-  const draggingCenterY = targetY
-  
-  let snappedX = targetX
-  let snappedY = targetY
+  const halfW = draggingRect.width / 2
+  const halfH = draggingRect.height / 2
+
+  let snappedCenterX = targetX
+  let snappedCenterY = targetY
   const snapEdges: SnapEdge[] = []
   let snapped = false
 
-  const checkAndSnap = (current: number, target: number, edgeType: SnapEdge['type'], targetId?: string) => {
-    if (Math.abs(current - target) <= threshold) {
-      snapEdges.push({ type: edgeType, value: target, targetId })
-      snapped = true
-      return target
+  const trySnapX = (dragEdge: number, targetEdge: number, edgeType: SnapEdge['type'], targetId?: string) => {
+    if (Math.abs(dragEdge - targetEdge) > threshold) return
+    snapEdges.push({ type: edgeType, value: targetEdge, targetId })
+    snapped = true
+    switch (edgeType) {
+      case 'left':
+        snappedCenterX = targetEdge + halfW
+        break
+      case 'right':
+        snappedCenterX = targetEdge - halfW
+        break
+      case 'centerX':
+        snappedCenterX = targetEdge
+        break
     }
-    return current
+  }
+
+  const trySnapY = (dragEdge: number, targetEdge: number, edgeType: SnapEdge['type'], targetId?: string) => {
+    if (Math.abs(dragEdge - targetEdge) > threshold) return
+    snapEdges.push({ type: edgeType, value: targetEdge, targetId })
+    snapped = true
+    switch (edgeType) {
+      case 'top':
+        snappedCenterY = targetEdge + halfH
+        break
+      case 'bottom':
+        snappedCenterY = targetEdge - halfH
+        break
+      case 'centerY':
+        snappedCenterY = targetEdge
+        break
+    }
   }
 
   otherPhrases.forEach(other => {
     if (other.id === draggingPhrase.id || !other.position) return
-    
+
     const otherRect = getPhraseRect(other, ctx)
-    const otherCenterX = other.position.x
-    const otherCenterY = other.position.y
 
-    snappedX = checkAndSnap(draggingRect.x, otherRect.x, 'left', other.id)
-    snappedX = checkAndSnap(draggingRect.x + draggingRect.width, otherRect.x + otherRect.width, 'right', other.id)
-    snappedX = checkAndSnap(draggingRect.x, otherRect.x + otherRect.width, 'left', other.id)
-    snappedX = checkAndSnap(draggingRect.x + draggingRect.width, otherRect.x, 'right', other.id)
-    snappedX = checkAndSnap(draggingCenterX, otherCenterX, 'centerX', other.id)
+    trySnapX(draggingRect.x, otherRect.x, 'left', other.id)
+    trySnapX(draggingRect.x + draggingRect.width, otherRect.x + otherRect.width, 'right', other.id)
+    trySnapX(draggingRect.x, otherRect.x + otherRect.width, 'left', other.id)
+    trySnapX(draggingRect.x + draggingRect.width, otherRect.x, 'right', other.id)
+    trySnapX(targetX, other.position.x, 'centerX', other.id)
 
-    snappedY = checkAndSnap(draggingRect.y, otherRect.y, 'top', other.id)
-    snappedY = checkAndSnap(draggingRect.y + draggingRect.height, otherRect.y + otherRect.height, 'bottom', other.id)
-    snappedY = checkAndSnap(draggingRect.y, otherRect.y + otherRect.height, 'top', other.id)
-    snappedY = checkAndSnap(draggingRect.y + draggingRect.height, otherRect.y, 'bottom', other.id)
-    snappedY = checkAndSnap(draggingCenterY, otherCenterY, 'centerY', other.id)
+    trySnapY(draggingRect.y, otherRect.y, 'top', other.id)
+    trySnapY(draggingRect.y + draggingRect.height, otherRect.y + otherRect.height, 'bottom', other.id)
+    trySnapY(draggingRect.y, otherRect.y + otherRect.height, 'top', other.id)
+    trySnapY(draggingRect.y + draggingRect.height, otherRect.y, 'bottom', other.id)
+    trySnapY(targetY, other.position.y, 'centerY', other.id)
   })
 
   const padding = 20
-  snappedX = checkAndSnap(draggingRect.x, padding, 'left')
-  snappedX = checkAndSnap(draggingRect.x + draggingRect.width, canvasSize.width - padding, 'right')
-  snappedX = checkAndSnap(draggingCenterX, canvasSize.width / 2, 'centerX')
+  trySnapX(draggingRect.x, padding, 'left')
+  trySnapX(draggingRect.x + draggingRect.width, canvasSize.width - padding, 'right')
+  trySnapX(targetX, canvasSize.width / 2, 'centerX')
 
-  snappedY = checkAndSnap(draggingRect.y, padding, 'top')
-  snappedY = checkAndSnap(draggingRect.y + draggingRect.height, canvasSize.height - padding, 'bottom')
-  snappedY = checkAndSnap(draggingCenterY, canvasSize.height / 2, 'centerY')
+  trySnapY(draggingRect.y, padding, 'top')
+  trySnapY(draggingRect.y + draggingRect.height, canvasSize.height - padding, 'bottom')
+  trySnapY(targetY, canvasSize.height / 2, 'centerY')
 
   return {
-    x: snappedX,
-    y: snappedY,
+    x: snappedCenterX,
+    y: snappedCenterY,
     snapped,
     snapEdges
   }
