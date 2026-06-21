@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { Theme } from '@/types'
 import { presetThemes, getAllThemes, getThemeById, decorationEmojis, categoryPriority } from '@/data/themes'
 import { loadThemeState, setCurrentTheme, saveCustomTheme, deleteCustomTheme, getCustomThemes } from '@/utils/storage'
@@ -15,6 +15,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'select', themeId: string): void
+  (e: 'themesChanged'): void
 }>()
 
 const themeState = ref(loadThemeState())
@@ -26,11 +27,31 @@ const selectedKeywords = ref<string[]>([])
 const keywordInput = ref('')
 const selectedCategories = ref<string[]>([])
 
-const allThemes = computed(() => getAllThemes(getCustomThemes()))
-const currentTheme = computed(() => getThemeById(props.currentThemeId, getCustomThemes()))
+const customThemesRevision = ref(0)
+
+const loadCustomThemesFresh = (): Theme[] => {
+  void customThemesRevision.value
+  return getCustomThemes()
+}
+
+const allThemes = computed(() => {
+  void customThemesRevision.value
+  return getAllThemes(getCustomThemes())
+})
+const currentTheme = computed(() => {
+  void customThemesRevision.value
+  return getThemeById(props.currentThemeId, getCustomThemes())
+})
 
 const presetThemesList = computed(() => allThemes.value.filter(t => !t.isCustom))
 const customThemesList = computed(() => allThemes.value.filter(t => t.isCustom))
+
+watch(() => props.visible, (visible) => {
+  if (visible) {
+    customThemesRevision.value++
+    themeState.value = loadThemeState()
+  }
+})
 
 const availableKeywords = [
   '明月', '落花', '清风', '垂柳', '流水', '春深', '黄昏', '昨夜', '相思', '缱绻',
@@ -104,8 +125,10 @@ const scoreWeights = ref<Record<string, number>>({
 const handleSelectTheme = (theme: Theme) => {
   setCurrentTheme(theme.id)
   themeState.value = loadThemeState()
+  customThemesRevision.value++
   musicPlayer.playPluckSound()
   emit('select', theme.id)
+  emit('themesChanged')
   emit('close')
 }
 
@@ -113,7 +136,9 @@ const handleDeleteCustomTheme = (themeId: string) => {
   if (!confirm('确定要删除这个自定义主题吗？')) return
   deleteCustomTheme(themeId)
   themeState.value = loadThemeState()
+  customThemesRevision.value++
   musicPlayer.playPluckSound()
+  emit('themesChanged')
 }
 
 const handleCreateTheme = () => {
@@ -156,7 +181,9 @@ const handleCreateTheme = () => {
   
   saveCustomTheme(theme)
   themeState.value = loadThemeState()
+  customThemesRevision.value++
   musicPlayer.playSuccessSound()
+  emit('themesChanged')
   
   showCreateDialog.value = false
   newThemeName.value = ''

@@ -46,10 +46,12 @@ const currentChapterId = ref(gameState.value.currentChapterId)
 const themeState = ref(loadThemeState())
 const showThemePanel = ref(false)
 const currentThemeId = ref(getCurrentThemeId())
+const customThemesRevision = ref(0)
 
 const isFreeRealm = computed(() => currentChapterId.value === 'ch5')
 
 const currentTheme = computed((): Theme => {
+  void customThemesRevision.value
   if (!isFreeRealm.value) {
     return getDefaultTheme()
   }
@@ -464,7 +466,14 @@ const handleSelectTheme = (themeId: string) => {
   currentThemeId.value = themeId
   setCurrentTheme(themeId)
   themeState.value = loadThemeState()
+  customThemesRevision.value++
   chapterDropCache.value = {}
+}
+
+const handleThemesChanged = () => {
+  customThemesRevision.value++
+  themeState.value = loadThemeState()
+  currentThemeId.value = getCurrentThemeId()
 }
 
 const collectedPhraseTexts = computed((): Set<string> => {
@@ -1160,6 +1169,7 @@ watch(boardPhrases, () => {
       :currentThemeId="currentThemeId"
       @close="showThemePanel = false"
       @select="handleSelectTheme"
+      @themesChanged="handleThemesChanged"
     />
     
     <div v-if="showDraftRestoreDialog && pendingDraft" class="draft-restore-overlay" @click.self="discardDraft">
