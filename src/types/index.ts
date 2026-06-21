@@ -93,10 +93,20 @@ export interface RevisionStep {
   dimension?: 'coherence' | 'imagery' | 'rhythm' | 'themeMatch'
 }
 
+export interface LayoutAnalysis {
+  spatialRhythm: number
+  spatialCompleteness: number
+  wordOrderCoherence: number
+  readingOrder: string[]
+  layoutIssues: string[]
+  hasPositions: boolean
+}
+
 export interface DiagnosticReport {
   scoreLosses: ScoreLoss[]
   themeDeviation: ThemeDeviation
   wordClassImbalance: WordClassImbalance
+  layoutAnalysis: LayoutAnalysis
   revisionPath: RevisionStep[]
   overallSuggestion: string
 }

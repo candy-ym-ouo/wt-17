@@ -16,7 +16,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const isDiagnosticMode = ref(false)
-const activeDiagnosticTab = ref<'loss' | 'theme' | 'balance' | 'revision'>('loss')
+const activeDiagnosticTab = ref<'loss' | 'theme' | 'balance' | 'layout' | 'revision'>('loss')
 
 const grade = computed(() => getScoreGrade(props.score.total))
 
@@ -263,6 +263,7 @@ const dimensionColors: Record<string, string> = {
                 { key: 'loss', label: '失分', icon: '◇' },
                 { key: 'theme', label: '主题', icon: '◈' },
                 { key: 'balance', label: '词类', icon: '◆' },
+                { key: 'layout', label: '布局', icon: '⊞' },
                 { key: 'revision', label: '改稿', icon: '❖' }
               ]"
               :key="tab.key"
@@ -444,6 +445,69 @@ const dimensionColors: Record<string, string> = {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div v-else-if="activeDiagnosticTab === 'layout'" key="layout" class="tab-panel">
+                <div class="layout-analysis">
+                  <div v-if="!diagnosticReport.layoutAnalysis.hasPositions" class="layout-empty">
+                    <span class="layout-empty-icon">⊞</span>
+                    <span class="layout-empty-text">词句尚未放置于画布，布局分析待激活</span>
+                  </div>
+                  <template v-else>
+                    <div class="layout-scores">
+                      <div class="layout-score-item">
+                        <span class="layout-score-label">空间韵律</span>
+                        <div class="layout-score-bar">
+                          <div class="layout-score-fill" :style="{ width: diagnosticReport.layoutAnalysis.spatialRhythm + '%', background: '#c9a86c' }"></div>
+                        </div>
+                        <span class="layout-score-value" style="color: #c9a86c">{{ diagnosticReport.layoutAnalysis.spatialRhythm }}</span>
+                      </div>
+                      <div class="layout-score-item">
+                        <span class="layout-score-label">意象布局</span>
+                        <div class="layout-score-bar">
+                          <div class="layout-score-fill" :style="{ width: diagnosticReport.layoutAnalysis.spatialCompleteness + '%', background: '#7a5b8c' }"></div>
+                        </div>
+                        <span class="layout-score-value" style="color: #7a5b8c">{{ diagnosticReport.layoutAnalysis.spatialCompleteness }}</span>
+                      </div>
+                      <div class="layout-score-item">
+                        <span class="layout-score-label">词序连贯</span>
+                        <div class="layout-score-bar">
+                          <div class="layout-score-fill" :style="{ width: diagnosticReport.layoutAnalysis.wordOrderCoherence + '%', background: '#5b7a8c' }"></div>
+                        </div>
+                        <span class="layout-score-value" style="color: #5b7a8c">{{ diagnosticReport.layoutAnalysis.wordOrderCoherence }}</span>
+                      </div>
+                    </div>
+
+                    <div class="layout-reading-order">
+                      <div class="layout-section-title">
+                        <span class="section-icon">→</span>
+                        <span>阅读序</span>
+                      </div>
+                      <div class="reading-order-flow">
+                        <template v-for="(text, idx) in diagnosticReport.layoutAnalysis.readingOrder" :key="idx">
+                          <span class="reading-order-word">{{ text }}</span>
+                          <span v-if="idx < diagnosticReport.layoutAnalysis.readingOrder.length - 1" class="reading-order-arrow">→</span>
+                        </template>
+                      </div>
+                    </div>
+
+                    <div v-if="diagnosticReport.layoutAnalysis.layoutIssues.length > 0" class="layout-issues">
+                      <div class="layout-section-title">
+                        <span class="section-icon">⚠</span>
+                        <span>布局提示</span>
+                      </div>
+                      <div v-for="issue in diagnosticReport.layoutAnalysis.layoutIssues" :key="issue" class="layout-issue-item">
+                        <span class="issue-dot"></span>
+                        <span class="issue-text">{{ issue }}</span>
+                      </div>
+                    </div>
+
+                    <div v-else class="layout-good">
+                      <span class="layout-good-icon">✓</span>
+                      <span class="layout-good-text">画布布局合理，词序与空间节奏良好</span>
+                    </div>
+                  </template>
                 </div>
               </div>
 
@@ -1358,6 +1422,177 @@ const dimensionColors: Record<string, string> = {
   height: 100%;
   border-radius: 0 10px 10px 0;
   opacity: 0.6;
+}
+
+.layout-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.layout-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px;
+  opacity: 0.5;
+}
+
+.layout-empty-icon {
+  font-size: 28px;
+  color: var(--text-muted);
+}
+
+.layout-empty-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-serif);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.layout-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.layout-score-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.layout-score-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-serif);
+  min-width: 52px;
+}
+
+.layout-score-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.layout-score-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.layout-score-value {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-serif);
+  min-width: 24px;
+  text-align: right;
+}
+
+.layout-reading-order {
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.layout-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.section-icon {
+  font-size: 12px;
+  color: var(--accent-gold);
+}
+
+.reading-order-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.reading-order-word {
+  padding: 3px 8px;
+  background: rgba(201, 168, 108, 0.1);
+  border: 1px solid rgba(201, 168, 108, 0.2);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--accent-gold);
+  font-family: var(--font-serif);
+}
+
+.reading-order-arrow {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.layout-issues {
+  padding: 12px;
+  background: rgba(201, 168, 108, 0.05);
+  border-radius: 10px;
+  border: 1px solid rgba(201, 168, 108, 0.15);
+}
+
+.layout-issue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.layout-issue-item:last-child {
+  margin-bottom: 0;
+}
+
+.issue-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #c9a86c;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.issue-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.layout-good {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(107, 142, 107, 0.08);
+  border: 1px solid rgba(107, 142, 107, 0.2);
+  border-radius: 8px;
+}
+
+.layout-good-icon {
+  color: #6b8e6b;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.layout-good-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-serif);
 }
 
 .fade-enter-active,
