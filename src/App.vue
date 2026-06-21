@@ -2183,25 +2183,33 @@ watch(currentChapterId, (newId) => {
     
     <TravelMap
       v-if="showTravelMap"
-      :mapNodes="mapNodes"
-      :travelMapState="travelMapState"
+      :chapters="chapters"
+      :currentChapterId="currentChapterId"
+      :unlockedChapterIds="unlockedChapterIds"
+      :chapterProgress="chapterProgress"
+      :questState="questState"
+      :sideQuests="sideQuests"
+      :visitedNodeIds="travelMapState.visitedNodeIds"
+      :completedEventIds="travelMapState.completedEventIds"
       :achievementProgress="achievementProgress"
-      @nodeSelect="handleMapNodeSelect"
+      @selectNode="handleMapNodeSelect"
+      @selectChapter="handleSelectChapter"
       @close="handleCloseTravelMap"
     />
     
     <StoryEvent
       v-if="showStoryEvent && currentStoryEvent"
       :event="currentStoryEvent"
+      :chapterId="currentStoryEvent.chapterId"
       @choice="handleStoryEventChoice"
       @close="handleStoryEventClose"
     />
     
     <AchievementPanel
       v-if="showAchievementPanel"
-      :achievements="achievements"
+      :chapters="chapters"
       :achievementProgress="achievementProgress"
-      @claimReward="handleClaimAchievementReward"
+      :questState="questState"
       @close="handleCloseAchievementPanel"
     />
     
