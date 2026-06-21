@@ -1,6 +1,17 @@
 import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase, Theme, ThemeState, StreakState } from '@/types'
 import { DEFAULT_THEME_ID } from '@/data/themes'
 import { getAllPhrases, getPhraseRarity } from '@/data/phrases'
+import {
+  migrateData,
+  unwrapVersionedData,
+  wrapWithVersion,
+  needsMigration,
+  getSchemaVersion,
+  type VersionedData,
+  type StorageDataType,
+  type MigrationReport,
+  CURRENT_SCHEMA_VERSION,
+} from '@/utils/migration'
 
 const STORAGE_KEYS = {
   COMPOSITIONS: 'poem_slices_compositions',
@@ -12,7 +23,7 @@ const STORAGE_KEYS = {
   THEME_STATE: 'poem_slices_theme_state',
 }
 
-const DEFAULT_QUEST_STATE: QuestState = {
+export const DEFAULT_QUEST_STATE: QuestState = {
   unlockedQuests: [],
   completedQuests: [],
   claimedRewards: [],
@@ -31,7 +42,7 @@ const DEFAULT_QUEST_STATE: QuestState = {
   }
 }
 
-const DEFAULT_STATE: GameState = {
+export const DEFAULT_STATE: GameState = {
   currentChapterId: 'ch1',
   compositions: [],
   unlockedChapters: ['ch1'],
@@ -41,7 +52,8 @@ const DEFAULT_STATE: GameState = {
 
 export const saveCompositions = (compositions: Composition[]): void => {
   try {
-    localStorage.setItem(STORAGE_KEYS.COMPOSITIONS, JSON.stringify(compositions))
+    const versioned = wrapWithVersion(compositions)
+    localStorage.setItem(STORAGE_KEYS.COMPOSITIONS, JSON.stringify(versioned))
   } catch (e) {
     console.error('Failed to save compositions:', e)
   }
@@ -49,8 +61,21 @@ export const saveCompositions = (compositions: Composition[]): void => {
 
 export const loadCompositions = (): Composition[] => {
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.COMPOSITIONS)
-    return data ? JSON.parse(data) : []
+    const raw = localStorage.getItem(STORAGE_KEYS.COMPOSITIONS)
+    if (!raw) return []
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<Composition[]>('compositions', data)
+      localStorage.setItem(STORAGE_KEYS.COMPOSITIONS, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] compositions migrated:', migrated._migrationLog)
+      }
+      return migrated.data
+    }
+    
+    return unwrapVersionedData(data)
   } catch (e) {
     console.error('Failed to load compositions:', e)
     return []
@@ -61,7 +86,8 @@ export const saveGameState = (state: Partial<GameState>): void => {
   try {
     const current = loadGameState()
     const merged = { ...current, ...state }
-    localStorage.setItem(STORAGE_KEYS.GAME_STATE, JSON.stringify(merged))
+    const versioned = wrapWithVersion(merged)
+    localStorage.setItem(STORAGE_KEYS.GAME_STATE, JSON.stringify(versioned))
   } catch (e) {
     console.error('Failed to save game state:', e)
   }
@@ -69,11 +95,24 @@ export const saveGameState = (state: Partial<GameState>): void => {
 
 export const loadGameState = (): GameState => {
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.GAME_STATE)
-    return data ? { ...DEFAULT_STATE, ...JSON.parse(data) } : DEFAULT_STATE
+    const raw = localStorage.getItem(STORAGE_KEYS.GAME_STATE)
+    if (!raw) return { ...DEFAULT_STATE }
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<GameState>('gameState', data)
+      localStorage.setItem(STORAGE_KEYS.GAME_STATE, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] gameState migrated:', migrated._migrationLog)
+      }
+      return { ...DEFAULT_STATE, ...migrated.data }
+    }
+    
+    return { ...DEFAULT_STATE, ...unwrapVersionedData(data) }
   } catch (e) {
     console.error('Failed to load game state:', e)
-    return DEFAULT_STATE
+    return { ...DEFAULT_STATE }
   }
 }
 
@@ -139,7 +178,8 @@ export const clearAllData = (): void => {
 
 export const saveQuestState = (state: QuestState): void => {
   try {
-    localStorage.setItem(STORAGE_KEYS.QUEST_STATE, JSON.stringify(state))
+    const versioned = wrapWithVersion(state)
+    localStorage.setItem(STORAGE_KEYS.QUEST_STATE, JSON.stringify(versioned))
   } catch (e) {
     console.error('Failed to save quest state:', e)
   }
@@ -147,11 +187,24 @@ export const saveQuestState = (state: QuestState): void => {
 
 export const loadQuestState = (): QuestState => {
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.QUEST_STATE)
-    return data ? { ...DEFAULT_QUEST_STATE, ...JSON.parse(data) } : DEFAULT_QUEST_STATE
+    const raw = localStorage.getItem(STORAGE_KEYS.QUEST_STATE)
+    if (!raw) return { ...DEFAULT_QUEST_STATE }
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<QuestState>('questState', data)
+      localStorage.setItem(STORAGE_KEYS.QUEST_STATE, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] questState migrated:', migrated._migrationLog)
+      }
+      return { ...DEFAULT_QUEST_STATE, ...migrated.data }
+    }
+    
+    return { ...DEFAULT_QUEST_STATE, ...unwrapVersionedData(data) }
   } catch (e) {
     console.error('Failed to load quest state:', e)
-    return DEFAULT_QUEST_STATE
+    return { ...DEFAULT_QUEST_STATE }
   }
 }
 
@@ -342,7 +395,8 @@ const DEFAULT_EDITING_STATE: EditingCompositionState = {
 
 export const saveEditingComposition = (state: EditingCompositionState): void => {
   try {
-    localStorage.setItem(STORAGE_KEYS.EDITING_COMPOSITION, JSON.stringify(state))
+    const versioned = wrapWithVersion(state)
+    localStorage.setItem(STORAGE_KEYS.EDITING_COMPOSITION, JSON.stringify(versioned))
   } catch (e) {
     console.error('Failed to save editing composition state:', e)
   }
@@ -350,8 +404,21 @@ export const saveEditingComposition = (state: EditingCompositionState): void => 
 
 export const loadEditingComposition = (): EditingCompositionState => {
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.EDITING_COMPOSITION)
-    return data ? { ...DEFAULT_EDITING_STATE, ...JSON.parse(data) } : { ...DEFAULT_EDITING_STATE }
+    const raw = localStorage.getItem(STORAGE_KEYS.EDITING_COMPOSITION)
+    if (!raw) return { ...DEFAULT_EDITING_STATE }
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<EditingCompositionState>('editingComposition', data)
+      localStorage.setItem(STORAGE_KEYS.EDITING_COMPOSITION, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] editingComposition migrated:', migrated._migrationLog)
+      }
+      return { ...DEFAULT_EDITING_STATE, ...migrated.data }
+    }
+    
+    return { ...DEFAULT_EDITING_STATE, ...unwrapVersionedData(data) }
   } catch (e) {
     console.error('Failed to load editing composition state:', e)
     return { ...DEFAULT_EDITING_STATE }
@@ -364,8 +431,21 @@ export const clearEditingComposition = (): void => {
 
 export const loadCollections = (): Collection[] => {
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.COLLECTIONS)
-    return data ? JSON.parse(data) : []
+    const raw = localStorage.getItem(STORAGE_KEYS.COLLECTIONS)
+    if (!raw) return []
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<Collection[]>('collections', data)
+      localStorage.setItem(STORAGE_KEYS.COLLECTIONS, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] collections migrated:', migrated._migrationLog)
+      }
+      return migrated.data
+    }
+    
+    return unwrapVersionedData(data)
   } catch (e) {
     console.error('Failed to load collections:', e)
     return []
@@ -374,7 +454,8 @@ export const loadCollections = (): Collection[] => {
 
 export const saveCollections = (collections: Collection[]): void => {
   try {
-    localStorage.setItem(STORAGE_KEYS.COLLECTIONS, JSON.stringify(collections))
+    const versioned = wrapWithVersion(collections)
+    localStorage.setItem(STORAGE_KEYS.COLLECTIONS, JSON.stringify(versioned))
   } catch (e) {
     console.error('Failed to save collections:', e)
   }
@@ -559,7 +640,8 @@ const DEFAULT_DRAFT: DraftState = {
 
 export const saveDraft = (draft: DraftState): void => {
   try {
-    localStorage.setItem(STORAGE_KEYS.DRAFT, JSON.stringify(draft))
+    const versioned = wrapWithVersion(draft)
+    localStorage.setItem(STORAGE_KEYS.DRAFT, JSON.stringify(versioned))
   } catch (e) {
     console.error('Failed to save draft:', e)
   }
@@ -567,10 +649,22 @@ export const saveDraft = (draft: DraftState): void => {
 
 export const loadDraft = (): DraftState | null => {
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.DRAFT)
-    if (!data) return null
-    const parsed = JSON.parse(data)
-    return { ...DEFAULT_DRAFT, ...parsed }
+    const raw = localStorage.getItem(STORAGE_KEYS.DRAFT)
+    if (!raw) return null
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<DraftState | null>('draft', data)
+      localStorage.setItem(STORAGE_KEYS.DRAFT, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] draft migrated:', migrated._migrationLog)
+      }
+      return migrated.data ? { ...DEFAULT_DRAFT, ...migrated.data } : null
+    }
+    
+    const unwrapped = unwrapVersionedData(data)
+    return unwrapped ? { ...DEFAULT_DRAFT, ...unwrapped } : null
   } catch (e) {
     console.error('Failed to load draft:', e)
     return null
@@ -614,7 +708,8 @@ const DEFAULT_THEME_STATE: ThemeState = {
 
 export const saveThemeState = (state: ThemeState): void => {
   try {
-    localStorage.setItem(STORAGE_KEYS.THEME_STATE, JSON.stringify(state))
+    const versioned = wrapWithVersion(state)
+    localStorage.setItem(STORAGE_KEYS.THEME_STATE, JSON.stringify(versioned))
   } catch (e) {
     console.error('Failed to save theme state:', e)
   }
@@ -622,8 +717,21 @@ export const saveThemeState = (state: ThemeState): void => {
 
 export const loadThemeState = (): ThemeState => {
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.THEME_STATE)
-    return data ? { ...DEFAULT_THEME_STATE, ...JSON.parse(data) } : { ...DEFAULT_THEME_STATE }
+    const raw = localStorage.getItem(STORAGE_KEYS.THEME_STATE)
+    if (!raw) return { ...DEFAULT_THEME_STATE }
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<ThemeState>('themeState', data)
+      localStorage.setItem(STORAGE_KEYS.THEME_STATE, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] themeState migrated:', migrated._migrationLog)
+      }
+      return { ...DEFAULT_THEME_STATE, ...migrated.data }
+    }
+    
+    return { ...DEFAULT_THEME_STATE, ...unwrapVersionedData(data) }
   } catch (e) {
     console.error('Failed to load theme state:', e)
     return { ...DEFAULT_THEME_STATE }

@@ -1,4 +1,11 @@
 import type { CanvasState, CanvasPhrase, HistorySnapshot, SnapshotStorage } from '@/types'
+import {
+  migrateData,
+  unwrapVersionedData,
+  wrapWithVersion,
+  needsMigration,
+  type VersionedData,
+} from '@/utils/migration'
 
 const SNAPSHOT_KEY = 'poem_slices_snapshots'
 const MAX_HISTORY = 50
@@ -111,8 +118,21 @@ const defaultSnapshotStorage: SnapshotStorage = {
 
 export const loadSnapshots = (): SnapshotStorage => {
   try {
-    const data = localStorage.getItem(SNAPSHOT_KEY)
-    return data ? { ...defaultSnapshotStorage, ...JSON.parse(data) } : { ...defaultSnapshotStorage }
+    const raw = localStorage.getItem(SNAPSHOT_KEY)
+    if (!raw) return { ...defaultSnapshotStorage }
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<SnapshotStorage>('snapshots', data)
+      localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] snapshots migrated:', migrated._migrationLog)
+      }
+      return { ...defaultSnapshotStorage, ...migrated.data }
+    }
+    
+    return { ...defaultSnapshotStorage, ...unwrapVersionedData(data) }
   } catch (e) {
     console.error('Failed to load snapshots:', e)
     return { ...defaultSnapshotStorage }
@@ -121,7 +141,8 @@ export const loadSnapshots = (): SnapshotStorage => {
 
 export const saveSnapshots = (storage: SnapshotStorage): void => {
   try {
-    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(storage))
+    const versioned = wrapWithVersion(storage)
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(versioned))
   } catch (e) {
     console.error('Failed to save snapshots:', e)
   }
