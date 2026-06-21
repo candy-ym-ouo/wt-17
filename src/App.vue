@@ -593,6 +593,7 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
     if (asNewCopy || !isEditing) {
       setEditingComposition(composition.id, title)
     }
+    justUnlockedChapter.value = null
     clearDraft()
   } else {
     boardPhrases.value = []
