@@ -682,7 +682,50 @@ const handleNextChapter = () => {
   pushToHistory()
   snapshotStorage.value = setCurrentSnapshot(null)
   clearEditingState()
+  clearDraft()
   justUnlockedChapter.value = null
+}
+
+const handleCloseChapters = () => {
+  showChapters.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
+}
+
+const handleClosePortfolio = () => {
+  showPortfolio.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
+}
+
+const handleCloseSaveDialog = () => {
+  showSaveDialog.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
+}
+
+const handleCloseQuestPanel = () => {
+  showQuestPanel.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
+}
+
+const handleCloseSnapshotPanel = () => {
+  showSnapshotPanel.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
+}
+
+const handleCloseCollection = () => {
+  showCollection.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
 }
 
 const checkCondition = (condition: QuestCondition, ctx: { compositions: Composition[]; boardPhrases: Phrase[]; chapterId: string; score: ScoreBreakdown; unlockedChapterCount: number }): boolean => {
@@ -960,7 +1003,7 @@ watch(boardPhrases, () => {
       :unlockedIds="unlockedChapterIds"
       :currentId="currentChapterId"
       @select="handleSelectChapter"
-      @close="showChapters = false"
+      @close="handleCloseChapters"
     />
     
     <Portfolio
@@ -971,7 +1014,7 @@ watch(boardPhrases, () => {
       :editingCompositionId="editingComposition.compositionId"
       @load="handleLoadComposition"
       @delete="handleDeleteComposition"
-      @close="showPortfolio = false"
+      @close="handleClosePortfolio"
       @pin="handlePinComposition"
       @unpin="handleUnpinComposition"
       @addToCollection="handleAddToCollection"
@@ -992,7 +1035,7 @@ watch(boardPhrases, () => {
       :originalTitle="editingOriginalTitle"
       @confirm="handleConfirmSave"
       @saveAsNew="handleSaveAsNew"
-      @cancel="showSaveDialog = false"
+      @cancel="handleCloseSaveDialog"
       @nextChapter="handleNextChapter"
     />
     
@@ -1001,7 +1044,7 @@ watch(boardPhrases, () => {
       :quests="sideQuests"
       :questState="questState"
       :currentChapterId="currentChapterId"
-      @close="showQuestPanel = false"
+      @close="handleCloseQuestPanel"
       @claim="handleClaimReward"
     />
     
@@ -1013,14 +1056,14 @@ watch(boardPhrases, () => {
       @restore="handleRestoreSnapshot"
       @delete="handleDeleteSnapshot"
       @rename="handleRenameSnapshot"
-      @close="showSnapshotPanel = false"
+      @close="handleCloseSnapshotPanel"
       @create="handleCreateSnapshot"
     />
     
     <PhraseCollection
       v-if="showCollection"
       :collection="questState.phraseCollection"
-      @close="showCollection = false"
+      @close="handleCloseCollection"
     />
     
     <div v-if="showDraftRestoreDialog && pendingDraft" class="draft-restore-overlay" @click.self="discardDraft">
