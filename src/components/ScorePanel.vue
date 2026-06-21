@@ -244,34 +244,35 @@ const dimensionColors: Record<string, string> = {
       </div>
     </div>
 
-    <transition name="fade">
-      <template v-if="!isDiagnosticMode">
-        <div class="score-bars">
-          <div v-for="bar in bars" :key="bar.label" class="score-bar-item">
-            <div class="bar-label">
-              <span class="bar-name">
-                {{ bar.label }}
-                <span v-if="bar.boost > 0" class="bar-boost" :style="{ color: bar.color }">
-                  +{{ Math.round(bar.boost * 100) }}%
+    <template v-if="!isDiagnosticMode">
+      <transition name="fade">
+        <div class="score-bars-wrapper">
+          <div class="score-bars">
+            <div v-for="bar in bars" :key="bar.label" class="score-bar-item">
+              <div class="bar-label">
+                <span class="bar-name">
+                  {{ bar.label }}
+                  <span v-if="bar.boost > 0" class="bar-boost" :style="{ color: bar.color }">
+                    +{{ Math.round(bar.boost * 100) }}%
+                  </span>
                 </span>
-              </span>
-              <span class="bar-value" :style="{ color: bar.color }">{{ bar.value }}</span>
-            </div>
-            <div class="bar-track">
-              <div
-                class="bar-fill"
-                :style="{ width: bar.value + '%', background: bar.color }"
-              ></div>
+                <span class="bar-value" :style="{ color: bar.color }">{{ bar.value }}</span>
+              </div>
+              <div class="bar-track">
+                <div
+                  class="bar-fill"
+                  :style="{ width: bar.value + '%', background: bar.color }"
+                ></div>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div v-if="hasBoosts" class="boost-notice">
-          <span class="boost-icon">✧</span>
-          <span class="boost-text">评分加成生效中</span>
-        </div>
-        
-        <div v-if="cipaiScore && cipaiName" class="cipai-score-section">
+          
+          <div v-if="hasBoosts" class="boost-notice">
+            <span class="boost-icon">✧</span>
+            <span class="boost-text">评分加成生效中</span>
+          </div>
+          
+          <div v-if="cipaiScore && cipaiName" class="cipai-score-section">
           <div class="cipai-score-header">
             <span class="cipai-score-icon">📜</span>
             <span class="cipai-score-name">{{ cipaiName }}</span>
@@ -357,17 +358,19 @@ const dimensionColors: Record<string, string> = {
           </div>
         </div>
         
-        <div v-if="score.total > 0" class="score-comment">
-          <span class="comment-icon">「</span>
-          <span class="comment-text">{{ grade.comment }}</span>
-          <span class="comment-icon">」</span>
+          <div v-if="score.total > 0" class="score-comment">
+            <span class="comment-icon">「</span>
+            <span class="comment-text">{{ grade.comment }}</span>
+            <span class="comment-icon">」</span>
+          </div>
         </div>
-      </template>
-    </transition>
+      </transition>
+    </template>
 
-    <transition name="fade">
-      <template v-if="isDiagnosticMode && diagnosticReport">
-        <div class="diagnostic-content">
+    <template v-if="isDiagnosticMode && diagnosticReport">
+      <transition name="fade">
+        <div class="diagnostic-content-wrapper">
+          <div class="diagnostic-content">
           <div class="diagnostic-summary">
             <div class="summary-item">
               <span class="summary-value" :style="{ color: grade.color }">{{ score.total }}</span>
@@ -834,9 +837,10 @@ const dimensionColors: Record<string, string> = {
               </div>
             </transition>
           </div>
+          </div>
         </div>
-      </template>
-    </transition>
+      </transition>
+    </template>
   </div>
 </template>
 

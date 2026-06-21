@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, CompositionVersion } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, CompositionVersion, MapNode, StoryEvent as StoryEventType, Achievement, AchievementProgress, TravelMapState } from '@/types'
 import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
@@ -16,7 +16,12 @@ import {
   pinComposition, unpinComposition,
   saveDraft, loadDraft, clearDraft, hasDraft, createDraftFromState,
   updateUserActivityOnVisit, determineUserEntryType, shouldShowWelcomeModal,
-  markWelcomeDismissed, markTutorialSeen, loadUserActivity
+  markWelcomeDismissed, markTutorialSeen, loadUserActivity,
+  loadAchievementProgress, saveAchievementProgress, unlockAchievement, completeAchievement,
+  claimAchievementReward, isAchievementUnlocked, isAchievementCompleted, isAchievementRewardClaimed,
+  loadTravelMapState, saveTravelMapState, visitMapNode, setCurrentMapNode,
+  completeStoryEvent, unlockChapterOnMap,
+  DEFAULT_ACHIEVEMENT_PROGRESS
 } from '@/utils/storage'
 import type { EditingCompositionState, DraftState, DraftSource } from '@/utils/storage'
 import type { Collection } from '@/types'
@@ -37,6 +42,7 @@ import { loadGatheringState, saveGatheringState, setGatheringActive, clearActive
 import { getCipaiById, getCipaiScoringRuleByMode, cipaiTemplates } from '@/data/cipaiTemplates'
 import { sortPhrasesForCipai, getCipaiProgress, getNextLineHint, getCipaiScoreForPhrases } from '@/utils/cipaiWorkshop'
 import type { CipaiTemplate, CipaiScoringMode, CipaiScoreBreakdown } from '@/types'
+import { mapNodes, storyEvents, achievements, getStoryEventById, getMapNodeById, getAchievementById } from '@/data/travelMap'
 
 import TopHeader from '@/components/TopHeader.vue'
 import PhrasePool from '@/components/PhrasePool.vue'
@@ -58,6 +64,9 @@ import GatheringRankingPanel from '@/components/GatheringRankingPanel.vue'
 import CipaiWorkshop from '@/components/CipaiWorkshop.vue'
 import MentorReviewPanel from '@/components/MentorReviewPanel.vue'
 import VersionCompare from '@/components/VersionCompare.vue'
+import TravelMap from '@/components/TravelMap.vue'
+import StoryEvent from '@/components/StoryEvent.vue'
+import AchievementPanel from '@/components/AchievementPanel.vue'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -136,6 +145,13 @@ const showMentorReview = ref(false)
 const reviewingComposition = ref<Composition | null>(null)
 const showVersionCompare = ref(false)
 const compareVersions = ref<[CompositionVersion, CompositionVersion] | null>(null)
+
+const showTravelMap = ref(false)
+const showAchievementPanel = ref(false)
+const showStoryEvent = ref(false)
+const currentStoryEvent = ref<StoryEventType | null>(null)
+const travelMapState = ref<TravelMapState>(loadTravelMapState())
+const achievementProgress = ref<AchievementProgress[]>(loadAchievementProgress())
 
 let autoSaveTimer: number | null = null
 
@@ -711,6 +727,14 @@ const collectionProgress = computed((): number => {
   return questState.value.phraseCollection.totalCollected
 })
 
+const completedAchievementCount = computed((): number => {
+  return achievementProgress.value.filter(p => p.completed).length
+})
+
+const totalAchievementCount = computed((): number => {
+  return achievements.length
+})
+
 const lastMilestoneLevel = ref<'none' | 'bronze' | 'silver' | 'gold'>('none')
 
 const checkScoreMilestone = (totalScore: number) => {
@@ -1194,6 +1218,218 @@ const checkQuestCompletion = () => {
   })
 }
 
+const checkAchievementUnlocks = () => {
+  const ctx = {
+    compositions: compositions.value,
+    boardPhrases: boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
+    })),
+    chapterId: currentChapterId.value,
+    score: score.value,
+    unlockedChapterCount: unlockedChapterIds.value.length
+  }
+
+  achievements.forEach(achievement => {
+    const progress = achievementProgress.value.find(p => p.achievementId === achievement.id)
+    if (progress?.completed) return
+
+    const unlocked = achievement.unlockConditions.every(c => checkCondition(c, ctx))
+    if (unlocked && !progress?.unlocked) {
+      unlockAchievement(achievement.id)
+      achievementProgress.value = loadAchievementProgress()
+    }
+  })
+}
+
+const checkAchievementCompletion = () => {
+  const ctx = {
+    compositions: compositions.value,
+    boardPhrases: boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
+    })),
+    chapterId: currentChapterId.value,
+    score: score.value,
+    unlockedChapterCount: unlockedChapterIds.value.length
+  }
+
+  achievements.forEach(achievement => {
+    const progress = achievementProgress.value.find(p => p.achievementId === achievement.id)
+    if (progress?.completed) return
+    if (!progress?.unlocked) return
+
+    const completed = achievement.completeConditions.every(c => checkCondition(c, ctx))
+    if (completed) {
+      completeAchievement(achievement.id)
+      achievementProgress.value = loadAchievementProgress()
+      musicPlayer.playMilestoneChime('gold')
+    }
+  })
+}
+
+const handleClaimAchievementReward = (achievementId: string) => {
+  const achievement = getAchievementById(achievementId)
+  if (!achievement || isAchievementRewardClaimed(achievementId)) return
+
+  achievement.rewards.forEach(reward => {
+    switch (reward.type) {
+      case 'phrase_unlock': {
+        const texts = reward.params.phraseTexts as string[]
+        const targetChapter = achievement.chapterId
+        texts.forEach(text => {
+          const phrase = createRewardPhrase(text)
+          if (phrase) {
+            addChapterRewardPhrase(targetChapter, phrase)
+            collectPhrase(text, targetChapter)
+          }
+        })
+        break
+      }
+      case 'phrase_pool_refresh': {
+        const targetChapterId = reward.params.chapterId as string
+        const category = reward.params.addCategory as PhraseCategory
+        const count = reward.params.count as number
+        const refreshed = refreshPoolByCategory(category, count)
+        if (targetChapterId === '__all__') {
+          chapters.forEach(ch => {
+            refreshed.forEach(p => {
+              addChapterRewardPhrase(ch.id, { ...p, id: `${p.id}_${ch.id}` })
+            })
+          })
+        } else {
+          refreshed.forEach(p => {
+            addChapterRewardPhrase(targetChapterId, p)
+          })
+        }
+        break
+      }
+      case 'score_weight_boost': {
+        addWeightBoost(reward.params.dimension as string, reward.params.boost as number)
+        break
+      }
+      case 'title_reward': {
+        addEarnedTitle(reward.params.title as string)
+        break
+      }
+    }
+  })
+
+  claimAchievementReward(achievementId)
+  achievementProgress.value = loadAchievementProgress()
+}
+
+const triggerStoryEvent = (event: StoryEventType) => {
+  currentStoryEvent.value = event
+  showStoryEvent.value = true
+}
+
+const checkStoryEventTriggers = () => {
+  const ctx = {
+    compositions: compositions.value,
+    boardPhrases: boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
+    })),
+    chapterId: currentChapterId.value,
+    score: score.value,
+    unlockedChapterCount: unlockedChapterIds.value.length
+  }
+
+  storyEvents.forEach(event => {
+    if (travelMapState.value.completedEventIds.includes(event.id)) return
+
+    const shouldTrigger = event.triggerParams ? Object.entries(event.triggerParams).every(([key, value]) => {
+      if (key === 'chapterId' && value !== ctx.chapterId) return false
+      if (key === 'minScore' && ctx.score.total < (value as number)) return false
+      if (key === 'minCount') {
+        if (event.triggerType === 'phrase_collect') {
+          return questState.value.phraseCollection.totalCollected >= (value as number)
+        }
+      }
+      return true
+    }) : true
+
+    if (shouldTrigger) {
+      completeStoryEvent(event.id)
+      travelMapState.value = loadTravelMapState()
+      triggerStoryEvent(event)
+    }
+  })
+}
+
+const handleMapNodeSelect = (node: MapNode) => {
+  visitMapNode(node.id)
+  travelMapState.value = loadTravelMapState()
+
+  if (node.eventId) {
+    const event = getStoryEventById(node.eventId)
+    if (event && !travelMapState.value.completedEventIds.includes(event.id)) {
+      completeStoryEvent(event.id)
+      travelMapState.value = loadTravelMapState()
+      triggerStoryEvent(event)
+    }
+  }
+
+  if (node.rewards) {
+    node.rewards.forEach(reward => {
+      if (reward.type === 'phrase' && reward.params.phraseTexts) {
+        const texts = reward.params.phraseTexts as string[]
+        texts.forEach(text => {
+          const phrase = createRewardPhrase(text)
+          if (phrase) {
+            addChapterRewardPhrase(node.chapterId, phrase)
+            collectPhrase(text, node.chapterId)
+          }
+        })
+      }
+      if (reward.type === 'title' && reward.params.title) {
+        addEarnedTitle(reward.params.title as string)
+      }
+    })
+  }
+
+  showTravelMap.value = false
+}
+
+const handleStoryEventChoice = (choiceId: string, consequence: any) => {
+  if (consequence?.type === 'quest_trigger' && consequence.params?.questId) {
+    unlockQuest(consequence.params.questId)
+    questState.value = loadQuestState()
+  }
+  showStoryEvent.value = false
+  currentStoryEvent.value = null
+  checkQuestUnlocks()
+  checkAchievementUnlocks()
+}
+
+const handleStoryEventClose = () => {
+  showStoryEvent.value = false
+  currentStoryEvent.value = null
+  checkQuestUnlocks()
+  checkAchievementUnlocks()
+}
+
+const handleCloseTravelMap = () => {
+  showTravelMap.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
+}
+
+const handleCloseAchievementPanel = () => {
+  showAchievementPanel.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
+}
+
 const handleClaimReward = (questId: string) => {
   const quest = getQuestById(questId)
   if (!quest || questState.value.claimedRewards.includes(questId)) return
@@ -1553,6 +1789,9 @@ onMounted(() => {
   
   pushToHistory()
   checkQuestUnlocks()
+  checkAchievementUnlocks()
+  checkAchievementCompletion()
+  checkStoryEventTriggers()
   startAutoSave()
 })
 
@@ -1565,6 +1804,9 @@ onUnmounted(() => {
 watch(boardPhrases, () => {
   checkQuestUnlocks()
   checkQuestCompletion()
+  checkAchievementUnlocks()
+  checkAchievementCompletion()
+  checkStoryEventTriggers()
   if (!isApplyingHistory.value) {
     pushToHistory()
   }
@@ -1599,6 +1841,8 @@ watch(currentChapterId, (newId) => {
       :isFreeRealm="isFreeRealm"
       :currentTheme="currentTheme"
       :soundscapeLabel="soundscapeLabel"
+      :achievementCount="completedAchievementCount"
+      :totalAchievementCount="totalAchievementCount"
       @toggleMusic="handleToggleMusic"
       @changeVolume="handleChangeVolume"
       @openChapters="showChapters = true"
@@ -1608,6 +1852,8 @@ watch(currentChapterId, (newId) => {
       @openThemes="showThemePanel = true"
       @openGathering="showGatheringPanel = true"
       @openCipaiWorkshop="showCipaiWorkshop = true"
+      @openTravelMap="showTravelMap = true"
+      @openAchievements="showAchievementPanel = true"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -1933,6 +2179,30 @@ watch(currentChapterId, (newId) => {
       @close="handleCloseVersionCompare"
       @loadVersion="handleLoadVersion"
       @swap="handleSwapCompareVersions"
+    />
+    
+    <TravelMap
+      v-if="showTravelMap"
+      :mapNodes="mapNodes"
+      :travelMapState="travelMapState"
+      :achievementProgress="achievementProgress"
+      @nodeSelect="handleMapNodeSelect"
+      @close="handleCloseTravelMap"
+    />
+    
+    <StoryEvent
+      v-if="showStoryEvent && currentStoryEvent"
+      :event="currentStoryEvent"
+      @choice="handleStoryEventChoice"
+      @close="handleStoryEventClose"
+    />
+    
+    <AchievementPanel
+      v-if="showAchievementPanel"
+      :achievements="achievements"
+      :achievementProgress="achievementProgress"
+      @claimReward="handleClaimAchievementReward"
+      @close="handleCloseAchievementPanel"
     />
     
     <div class="bg-decoration">

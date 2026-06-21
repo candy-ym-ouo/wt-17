@@ -14,6 +14,8 @@ interface Props {
   isFreeRealm: boolean
   currentTheme: Theme
   soundscapeLabel: string
+  achievementCount: number
+  totalAchievementCount: number
 }
 
 defineProps<Props>()
@@ -27,6 +29,8 @@ const emit = defineEmits<{
   (e: 'openThemes'): void
   (e: 'openGathering'): void
   (e: 'openCipaiWorkshop'): void
+  (e: 'openTravelMap'): void
+  (e: 'openAchievements'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save'): void
@@ -124,6 +128,13 @@ const emit = defineEmits<{
       </button>
       <button class="icon-btn cipai-btn" @click="emit('openCipaiWorkshop')" title="词牌工坊">
         📜
+      </button>
+      <button class="icon-btn travelmap-btn" @click="emit('openTravelMap')" title="游历地图">
+        🗺️
+      </button>
+      <button class="icon-btn achievement-btn" @click="emit('openAchievements')" title="成就收集">
+        🏆
+        <span v-if="achievementCount > 0" class="achievement-badge">{{ achievementCount }}/{{ totalAchievementCount }}</span>
       </button>
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺
@@ -390,6 +401,40 @@ const emit = defineEmits<{
 
 .gathering-btn:hover {
   color: #d4a574;
+}
+
+.travelmap-btn {
+  position: relative;
+}
+
+.travelmap-btn:hover {
+  color: #6b8e6b;
+}
+
+.achievement-btn {
+  position: relative;
+}
+
+.achievement-btn:hover {
+  color: #c9a86c;
+}
+
+.achievement-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 32px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--accent-gold);
+  color: #1a1a2e;
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
 }
 
 .save-btn {

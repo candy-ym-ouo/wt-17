@@ -88,3 +88,212 @@ button:disabled {
   0% { transform: scale(0); opacity: 0.6; }
   100% { transform: scale(3); opacity: 0; }
 }
+
+@keyframes nodePulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(201, 168, 108, 0.7); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(201, 168, 108, 0); }
+}
+
+@keyframes nodePulseRing {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes pathDraw {
+  from { stroke-dashoffset: 1000; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes pathGlow {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(201, 168, 108, 0.5)); }
+  50% { filter: drop-shadow(0 0 8px rgba(201, 168, 108, 0.8)); }
+}
+
+@keyframes achievementUnlock {
+  0% { transform: scale(0) rotate(-180deg); opacity: 0; }
+  50% { transform: scale(1.2) rotate(10deg); }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes achievementGlow {
+  0%, 100% { box-shadow: 0 0 5px rgba(201, 168, 108, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(201, 168, 108, 0.8), 0 0 40px rgba(201, 168, 108, 0.4); }
+}
+
+@keyframes storyTextReveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes storyChoiceHover {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes mapExplore {
+  0% { transform: scale(0.95); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes nodeUnlock {
+  0% { transform: scale(0.5); opacity: 0; filter: grayscale(1); }
+  50% { transform: scale(1.1); filter: grayscale(0.5); }
+  100% { transform: scale(1); opacity: 1; filter: grayscale(0); }
+}
+
+@keyframes nodeVisit {
+  0% { transform: scale(1); }
+  30% { transform: scale(0.9); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+@keyframes rarityLegendary {
+  0%, 100% { text-shadow: 0 0 10px #ffd700, 0 0 20px #ffd700, 0 0 30px #ffd700; }
+  50% { text-shadow: 0 0 20px #ffd700, 0 0 40px #ffd700, 0 0 60px #ffd700; }
+}
+
+@keyframes rarityEpic {
+  0%, 100% { text-shadow: 0 0 8px #9b59b6, 0 0 16px #9b59b6; }
+  50% { text-shadow: 0 0 16px #9b59b6, 0 0 32px #9b59b6; }
+}
+
+@keyframes rarityRare {
+  0%, 100% { text-shadow: 0 0 6px #3498db, 0 0 12px #3498db; }
+  50% { text-shadow: 0 0 12px #3498db, 0 0 24px #3498db; }
+}
+
+@keyframes progressFill {
+  from { width: 0%; }
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bounceIn {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes ripple {
+  0% { box-shadow: 0 0 0 0 rgba(201, 168, 108, 0.4); }
+  70% { box-shadow: 0 0 0 15px rgba(201, 168, 108, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(201, 168, 108, 0); }
+}
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-3px) rotate(1deg); }
+  75% { transform: translateY(3px) rotate(-1deg); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes typewriterBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-node-pulse {
+  animation: nodePulse 2s ease-in-out infinite;
+}
+
+.animate-node-unlock {
+  animation: nodeUnlock 0.6s ease-out forwards;
+}
+
+.animate-node-visit {
+  animation: nodeVisit 0.5s ease-out;
+}
+
+.animate-achievement-unlock {
+  animation: achievementUnlock 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-achievement-glow {
+  animation: achievementGlow 2s ease-in-out infinite;
+}
+
+.animate-path-draw {
+  stroke-dasharray: 1000;
+  animation: pathDraw 2s ease-out forwards;
+}
+
+.animate-path-glow {
+  animation: pathGlow 2s ease-in-out infinite;
+}
+
+.animate-typewriter-blink::after {
+  content: '|';
+  animation: typewriterBlink 1s step-end infinite;
+  margin-left: 2px;
+}
+
+.animate-rarity-legendary {
+  animation: rarityLegendary 2s ease-in-out infinite;
+}
+
+.animate-rarity-epic {
+  animation: rarityEpic 2s ease-in-out infinite;
+}
+
+.animate-rarity-rare {
+  animation: rarityRare 2s ease-in-out infinite;
+}
+
+.animate-fade-slide-in {
+  animation: fadeSlideIn 0.5s ease-out forwards;
+}
+
+.animate-fade-slide-up {
+  animation: fadeSlideUp 0.5s ease-out forwards;
+}
+
+.animate-bounce-in {
+  animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-ripple {
+  animation: ripple 2s infinite;
+}
+
+.animate-float-slow {
+  animation: floatSlow 6s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: spinSlow 20s linear infinite;
+}
+
+.animate-map-explore {
+  animation: mapExplore 0.6s ease-out forwards;
+}
+
+.animate-story-text-reveal {
+  animation: storyTextReveal 0.8s ease-out forwards;
+}
+
+.animate-progress-fill {
+  animation: progressFill 1s ease-out forwards;
+}
+

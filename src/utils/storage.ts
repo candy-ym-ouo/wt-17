@@ -1,4 +1,4 @@
-import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase, Theme, ThemeState, StreakState, UserActivityState, UserEntryType } from '@/types'
+import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase, Theme, ThemeState, StreakState, UserActivityState, UserEntryType, AchievementProgress, TravelMapState } from '@/types'
 import { DEFAULT_THEME_ID } from '@/data/themes'
 import { getAllPhrases, getPhraseRarity } from '@/data/phrases'
 import {
@@ -22,6 +22,8 @@ const STORAGE_KEYS = {
   DRAFT: 'poem_slices_draft',
   THEME_STATE: 'poem_slices_theme_state',
   USER_ACTIVITY: 'poem_slices_user_activity',
+  TRAVEL_MAP_STATE: 'poem_slices_travel_map_state',
+  ACHIEVEMENT_PROGRESS: 'poem_slices_achievement_progress',
 }
 
 export const DEFAULT_QUEST_STATE: QuestState = {
@@ -884,4 +886,178 @@ export const shouldShowWelcomeModal = (): boolean => {
 
 export const clearUserActivity = (): void => {
   localStorage.removeItem(STORAGE_KEYS.USER_ACTIVITY)
+}
+
+export const DEFAULT_ACHIEVEMENT_PROGRESS: AchievementProgress[] = []
+
+export const saveAchievementProgress = (progress: AchievementProgress[]): void => {
+  try {
+    const versioned = wrapWithVersion(progress)
+    localStorage.setItem(STORAGE_KEYS.ACHIEVEMENT_PROGRESS, JSON.stringify(versioned))
+  } catch (e) {
+    console.error('Failed to save achievement progress:', e)
+  }
+}
+
+export const loadAchievementProgress = (): AchievementProgress[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ACHIEVEMENT_PROGRESS)
+    if (!raw) return [...DEFAULT_ACHIEVEMENT_PROGRESS]
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<AchievementProgress[]>('achievementProgress', data)
+      localStorage.setItem(STORAGE_KEYS.ACHIEVEMENT_PROGRESS, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] achievementProgress migrated:', migrated._migrationLog)
+      }
+      return migrated.data
+    }
+    
+    return unwrapVersionedData(data)
+  } catch (e) {
+    console.error('Failed to load achievement progress:', e)
+    return [...DEFAULT_ACHIEVEMENT_PROGRESS]
+  }
+}
+
+export const unlockAchievement = (achievementId: string): void => {
+  const progress = loadAchievementProgress()
+  const existing = progress.find(p => p.achievementId === achievementId)
+  if (existing && existing.unlocked) return
+  
+  if (existing) {
+    existing.unlocked = true
+    existing.unlockedAt = Date.now()
+  } else {
+    progress.push({
+      achievementId,
+      unlocked: true,
+      completed: false,
+      claimed: false,
+      unlockedAt: Date.now()
+    })
+  }
+  saveAchievementProgress(progress)
+}
+
+export const completeAchievement = (achievementId: string): void => {
+  const progress = loadAchievementProgress()
+  const existing = progress.find(p => p.achievementId === achievementId)
+  
+  if (existing) {
+    existing.unlocked = true
+    existing.completed = true
+    existing.completedAt = Date.now()
+    if (!existing.unlockedAt) {
+      existing.unlockedAt = Date.now()
+    }
+  } else {
+    progress.push({
+      achievementId,
+      unlocked: true,
+      completed: true,
+      claimed: false,
+      unlockedAt: Date.now(),
+      completedAt: Date.now()
+    })
+  }
+  saveAchievementProgress(progress)
+}
+
+export const claimAchievementReward = (achievementId: string): void => {
+  const progress = loadAchievementProgress()
+  const existing = progress.find(p => p.achievementId === achievementId)
+  if (existing) {
+    existing.claimed = true
+  }
+  saveAchievementProgress(progress)
+}
+
+export const isAchievementUnlocked = (achievementId: string): boolean => {
+  const progress = loadAchievementProgress()
+  return progress.some(p => p.achievementId === achievementId && p.unlocked)
+}
+
+export const isAchievementCompleted = (achievementId: string): boolean => {
+  const progress = loadAchievementProgress()
+  return progress.some(p => p.achievementId === achievementId && p.completed)
+}
+
+export const isAchievementRewardClaimed = (achievementId: string): boolean => {
+  const progress = loadAchievementProgress()
+  return progress.some(p => p.achievementId === achievementId && p.claimed)
+}
+
+export const DEFAULT_TRAVEL_MAP_STATE: TravelMapState = {
+  currentNodeId: 'node_ch1',
+  visitedNodeIds: ['node_ch1'],
+  completedEventIds: [],
+  achievements: [],
+  unlockedChapterIds: ['ch1'],
+  mapExplorationPercent: 0
+}
+
+export const saveTravelMapState = (state: TravelMapState): void => {
+  try {
+    const versioned = wrapWithVersion(state)
+    localStorage.setItem(STORAGE_KEYS.TRAVEL_MAP_STATE, JSON.stringify(versioned))
+  } catch (e) {
+    console.error('Failed to save travel map state:', e)
+  }
+}
+
+export const loadTravelMapState = (): TravelMapState => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.TRAVEL_MAP_STATE)
+    if (!raw) return { ...DEFAULT_TRAVEL_MAP_STATE }
+    
+    let data = JSON.parse(raw)
+    
+    if (needsMigration(data)) {
+      const migrated = migrateData<TravelMapState>('travelMapState', data)
+      localStorage.setItem(STORAGE_KEYS.TRAVEL_MAP_STATE, JSON.stringify(migrated))
+      if (migrated._migrationLog && migrated._migrationLog.length > 0) {
+        console.info('[Migration] travelMapState migrated:', migrated._migrationLog)
+      }
+      return { ...DEFAULT_TRAVEL_MAP_STATE, ...migrated.data }
+    }
+    
+    return { ...DEFAULT_TRAVEL_MAP_STATE, ...unwrapVersionedData(data) }
+  } catch (e) {
+    console.error('Failed to load travel map state:', e)
+    return { ...DEFAULT_TRAVEL_MAP_STATE }
+  }
+}
+
+export const visitMapNode = (nodeId: string): void => {
+  const state = loadTravelMapState()
+  if (!state.visitedNodeIds.includes(nodeId)) {
+    state.visitedNodeIds.push(nodeId)
+    state.mapExplorationPercent = Math.round((state.visitedNodeIds.length / 20) * 100)
+    saveTravelMapState(state)
+  }
+}
+
+export const setCurrentMapNode = (nodeId: string): void => {
+  const state = loadTravelMapState()
+  state.currentNodeId = nodeId
+  saveTravelMapState(state)
+}
+
+export const completeStoryEvent = (eventId: string): void => {
+  const state = loadTravelMapState()
+  if (!state.completedEventIds.includes(eventId)) {
+    state.completedEventIds.push(eventId)
+    saveTravelMapState(state)
+  }
+}
+
+export const unlockChapterOnMap = (chapterId: string): void => {
+  const state = loadTravelMapState()
+  if (!state.unlockedChapterIds.includes(chapterId)) {
+    state.unlockedChapterIds.push(chapterId)
+    saveTravelMapState(state)
+  }
 }

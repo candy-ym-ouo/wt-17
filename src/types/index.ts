@@ -753,6 +753,103 @@ export interface ReviewState {
   sessions: MentorReviewSession[]
 }
 
+export interface MapNode {
+  id: string
+  chapterId: string
+  x: number
+  y: number
+  label: string
+  type: 'chapter' | 'event' | 'milestone' | 'branch'
+  unlockCondition?: {
+    type: 'chapter_complete' | 'score_threshold' | 'quest_complete' | 'phrase_collection'
+    params: Record<string, any>
+  }
+  rewards?: {
+    type: 'phrase' | 'title' | 'score_boost' | 'chapter_unlock'
+    params: Record<string, any>
+  }[]
+  eventId?: string
+  icon: string
+  accentColor: string
+}
+
+export interface StoryEvent {
+  id: string
+  chapterId: string
+  triggerType: 'chapter_unlock' | 'chapter_complete' | 'quest_complete' | 'achievement_unlock' | 'phrase_collect'
+  triggerParams: Record<string, any>
+  title: string
+  content: string[]
+  character?: string
+  backgroundGradient?: string
+  accentColor: string
+  choices?: {
+    id: string
+    text: string
+    consequence?: {
+      type: 'phrase_unlock' | 'score_boost' | 'title' | 'quest_trigger'
+      params: Record<string, any>
+    }
+  }[]
+}
+
+export type AchievementCategory = 'chapter' | 'score' | 'collection' | 'combo' | 'streak' | 'exploration'
+
+export interface Achievement {
+  id: string
+  chapterId: string
+  category: AchievementCategory
+  title: string
+  description: string
+  icon: string
+  rarity: 'bronze' | 'silver' | 'gold' | 'platinum'
+  unlockConditions: QuestCondition[]
+  completeConditions: QuestCondition[]
+  rewards: QuestReward[]
+  accentColor: string
+  hint?: string
+  isSecret?: boolean
+}
+
+export interface AchievementProgress {
+  achievementId: string
+  unlocked: boolean
+  completed: boolean
+  claimed: boolean
+  unlockedAt?: number
+  completedAt?: number
+}
+
+export interface TravelMapState {
+  currentNodeId: string
+  visitedNodeIds: string[]
+  completedEventIds: string[]
+  achievements: AchievementProgress[]
+  unlockedChapterIds: string[]
+  mapExplorationPercent: number
+}
+
+export interface DropEvent {
+  id: string
+  chapterId: string
+  triggerType: 'chapter_start' | 'score_milestone' | 'quest_complete' | 'story_choice'
+  triggerParams: Record<string, any>
+  phraseTexts: string[]
+  rarityBoost?: Partial<Record<PhraseRarity, number>>
+  isExclusive: boolean
+  description: string
+}
+
+export interface TravelMapNode {
+  node: MapNode
+  progress: {
+    unlocked: boolean
+    completed: boolean
+    visited: boolean
+    percent: number
+  }
+}
+
 export const ANNOTATION_TYPE_LABELS: Record<AnnotationType, string> = {
   praise: '赞赏',
   suggestion: '建议',
@@ -767,4 +864,27 @@ export const ANNOTATION_TYPE_COLORS: Record<AnnotationType, string> = {
   question: '#7a9ea8',
   correction: '#c56b6b',
   general: '#a8a498'
+}
+
+export const ACHIEVEMENT_RARITY_LABELS: Record<string, string> = {
+  bronze: '青铜',
+  silver: '白银',
+  gold: '黄金',
+  platinum: '铂金'
+}
+
+export const ACHIEVEMENT_RARITY_COLORS: Record<string, string> = {
+  bronze: '#cd7f32',
+  silver: '#c0c0c0',
+  gold: '#ffd700',
+  platinum: '#e5e4e2'
+}
+
+export const ACHIEVEMENT_CATEGORY_LABELS: Record<AchievementCategory, string> = {
+  chapter: '章节',
+  score: '评分',
+  collection: '收集',
+  combo: '组合',
+  streak: '连胜',
+  exploration: '探索'
 }
