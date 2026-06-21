@@ -13,6 +13,7 @@ interface Props {
   editingTitle: string
   isFreeRealm: boolean
   currentTheme: Theme
+  soundscapeLabel: string
 }
 
 defineProps<Props>()
@@ -80,6 +81,7 @@ const emit = defineEmits<{
         <span v-if="musicEnabled">♪</span>
         <span v-else>♩</span>
       </button>
+      <span v-if="musicEnabled" class="soundscape-label">{{ soundscapeLabel }}</span>
       <div class="history-group">
         <button 
           class="icon-btn history-btn" 
@@ -234,6 +236,19 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   padding: 0 8px;
+}
+
+.soundscape-label {
+  font-size: 11px;
+  color: var(--accent-gold);
+  background: rgba(201, 168, 108, 0.08);
+  padding: 3px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(201, 168, 108, 0.2);
+  font-family: var(--font-serif);
+  letter-spacing: 1px;
+  white-space: nowrap;
+  transition: all 0.3s ease;
 }
 
 .volume-slider {
@@ -461,6 +476,10 @@ const emit = defineEmits<{
     padding: 8px 12px;
   }
   .volume-control {
+    display: none;
+  }
+  
+  .soundscape-label {
     display: none;
   }
 }

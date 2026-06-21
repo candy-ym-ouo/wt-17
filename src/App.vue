@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme } from '@/types'
-import { chapters, getChapterById, chapterDropConfigs } from '@/data/chapters'
+import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
 import { calculateScore, generatePoemTitle } from '@/utils/scoring'
@@ -481,6 +481,11 @@ const collectedPhraseTexts = computed((): Set<string> => {
   return new Set(Object.keys(collected))
 })
 
+const soundscapeLabel = computed(() => {
+  const sc = chapterSoundscapes[currentChapterId.value]
+  return sc ? sc.label : '默认'
+})
+
 const totalPhraseCount = computed((): number => {
   const basePhrases = getAllPhrases().length
   const rewardPhraseCount = Object.keys(rewardPhrases).length
@@ -490,6 +495,21 @@ const totalPhraseCount = computed((): number => {
 const collectionProgress = computed((): number => {
   return questState.value.phraseCollection.totalCollected
 })
+
+const lastMilestoneLevel = ref<'none' | 'bronze' | 'silver' | 'gold'>('none')
+
+const checkScoreMilestone = (totalScore: number) => {
+  let level: 'none' | 'bronze' | 'silver' | 'gold' = 'none'
+  if (totalScore >= 90) level = 'gold'
+  else if (totalScore >= 75) level = 'silver'
+  else if (totalScore >= 60) level = 'bronze'
+
+  const levelOrder = { none: 0, bronze: 1, silver: 2, gold: 3 }
+  if (level !== 'none' && levelOrder[level] > levelOrder[lastMilestoneLevel.value]) {
+    lastMilestoneLevel.value = level
+    musicPlayer.playMilestoneChime(level)
+  }
+}
 
 const handlePhraseSelect = (phrase: Phrase) => {
   canvasBoardRef.value?.addPhrase(phrase)
@@ -541,6 +561,8 @@ const handleSelectChapter = (chapterId: string) => {
   clearEditingState()
   showChapters.value = false
   justUnlockedChapter.value = null
+  lastMilestoneLevel.value = 'none'
+  musicPlayer.switchChapter(chapterId)
 }
 
 const handleReset = () => {
@@ -619,7 +641,7 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
 
   saveComposition(composition)
   compositions.value = loadCompositions()
-  musicPlayer.playSuccessSound()
+  musicPlayer.playSaveChime()
 
   const phraseTexts = phrases.map(p => p.text)
   const { newlyCollected } = collectPhrases(phraseTexts, currentChapterId.value)
@@ -958,6 +980,7 @@ const handleFirstInteraction = () => {
   if (gameState.value.musicEnabled) {
     musicPlayer.init()
     musicPlayer.setVolume(gameState.value.musicVolume)
+    musicPlayer.switchChapter(currentChapterId.value)
     musicPlayer.play()
   }
 }
@@ -992,6 +1015,19 @@ watch(boardPhrases, () => {
     pushToHistory()
   }
 }, { deep: true })
+
+watch(() => score.value.total, (newTotal) => {
+  if (newTotal > 0 && boardPhrases.value.length > 0) {
+    checkScoreMilestone(newTotal)
+  }
+})
+
+watch(currentChapterId, (newId) => {
+  lastMilestoneLevel.value = 'none'
+  if (gameState.value.musicEnabled) {
+    musicPlayer.switchChapter(newId)
+  }
+})
 </script>
 
 <template>
@@ -1008,6 +1044,7 @@ watch(boardPhrases, () => {
       :editingTitle="editingOriginalTitle"
       :isFreeRealm="isFreeRealm"
       :currentTheme="currentTheme"
+      :soundscapeLabel="soundscapeLabel"
       @toggleMusic="handleToggleMusic"
       @changeVolume="handleChangeVolume"
       @openChapters="showChapters = true"

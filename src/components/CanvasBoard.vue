@@ -493,7 +493,7 @@ const onPointerDown = (e: MouseEvent | TouchEvent) => {
       coords.y <= hit.position.y - height / 2 + 12
     ) {
       spawnParticles(hit.position.x, hit.position.y, categoryColors[hit.category])
-      musicPlayer.playPluckSound()
+      musicPlayer.playRemoveSound()
       emit('remove', hit.id)
       return
     }
@@ -575,7 +575,7 @@ const addPhraseToBoard = (phrase: Phrase) => {
   }
   
   spawnParticles(x, y, categoryColors[phrase.category])
-  musicPlayer.playPluckSound()
+  musicPlayer.playPlaceSound()
   
   const newBoardPhrases = [...props.boardPhrases, canvasPhrase]
   emit('update:boardPhrases', newBoardPhrases)

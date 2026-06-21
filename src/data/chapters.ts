@@ -1,4 +1,4 @@
-import type { Chapter, Phrase, PhraseCategory } from '@/types'
+import type { Chapter, Phrase, PhraseCategory, ChapterSoundscape } from '@/types'
 import {
   scenePhrases, emotionPhrases, timePhrases,
   actionPhrases, imageryPhrases, createPhrase,
@@ -145,6 +145,114 @@ export const chapters: Chapter[] = [
     hint: '自由选择词句，不受格律限制，创造独一无二的诗篇'
   }
 ]
+
+export const chapterSoundscapes: Record<string, ChapterSoundscape> = {
+  ch1: {
+    droneBase: 130.81,
+    droneHarmonic: 196.00,
+    droneGain: 0.08,
+    harmonicGain: 0.04,
+    droneAnimCycle: 8,
+    scale: [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25],
+    melodyInterval: 3500,
+    melodyAttack: 2,
+    melodyDecay: 4,
+    melodyPeakGain: 0.04,
+    melodySkipChance: 0.3,
+    melodyTypes: ['triangle', 'sine'],
+    octaveShifts: [0.5, 1],
+    pluckFreqMultiplier: 1.5,
+    pluckDecay: 0.3,
+    successNotes: [523.25, 659.25, 783.99],
+    successNoteGap: 120,
+    milestoneChime: [523.25, 659.25, 783.99, 1046.50],
+    label: '春夜流水'
+  },
+  ch2: {
+    droneBase: 110.00,
+    droneHarmonic: 164.81,
+    droneGain: 0.07,
+    harmonicGain: 0.05,
+    droneAnimCycle: 10,
+    scale: [220.00, 246.94, 261.63, 329.63, 349.23, 440.00, 493.88, 523.25],
+    melodyInterval: 4500,
+    melodyAttack: 2.5,
+    melodyDecay: 5,
+    melodyPeakGain: 0.035,
+    melodySkipChance: 0.4,
+    melodyTypes: ['sine', 'triangle'],
+    octaveShifts: [0.5, 1],
+    pluckFreqMultiplier: 1.2,
+    pluckDecay: 0.4,
+    successNotes: [440.00, 523.25, 659.25],
+    successNoteGap: 140,
+    milestoneChime: [440.00, 523.25, 659.25, 880.00],
+    label: '秋风古道'
+  },
+  ch3: {
+    droneBase: 146.83,
+    droneHarmonic: 220.00,
+    droneGain: 0.06,
+    harmonicGain: 0.03,
+    droneAnimCycle: 12,
+    scale: [293.66, 349.23, 392.00, 440.00, 523.25, 587.33, 698.46, 783.99],
+    melodyInterval: 5000,
+    melodyAttack: 3,
+    melodyDecay: 6,
+    melodyPeakGain: 0.03,
+    melodySkipChance: 0.45,
+    melodyTypes: ['sine'],
+    octaveShifts: [1, 2],
+    pluckFreqMultiplier: 1.8,
+    pluckDecay: 0.5,
+    successNotes: [587.33, 698.46, 880.00],
+    successNoteGap: 160,
+    milestoneChime: [587.33, 698.46, 880.00, 1174.66],
+    label: '雪夜归灯'
+  },
+  ch4: {
+    droneBase: 98.00,
+    droneHarmonic: 146.83,
+    droneGain: 0.09,
+    harmonicGain: 0.06,
+    droneAnimCycle: 7,
+    scale: [196.00, 220.00, 261.63, 293.66, 329.63, 392.00, 440.00, 523.25],
+    melodyInterval: 3000,
+    melodyAttack: 1.5,
+    melodyDecay: 3.5,
+    melodyPeakGain: 0.045,
+    melodySkipChance: 0.25,
+    melodyTypes: ['triangle', 'sawtooth'],
+    octaveShifts: [0.5, 1],
+    pluckFreqMultiplier: 1.0,
+    pluckDecay: 0.25,
+    successNotes: [392.00, 493.88, 587.33],
+    successNoteGap: 100,
+    milestoneChime: [392.00, 493.88, 587.33, 783.99],
+    label: '夜雨抚琴'
+  },
+  ch5: {
+    droneBase: 164.81,
+    droneHarmonic: 246.94,
+    droneGain: 0.05,
+    harmonicGain: 0.03,
+    droneAnimCycle: 14,
+    scale: [261.63, 293.66, 329.63, 369.99, 415.30, 466.16, 523.25, 587.33, 659.25, 739.99],
+    melodyInterval: 2800,
+    melodyAttack: 2,
+    melodyDecay: 5,
+    melodyPeakGain: 0.038,
+    melodySkipChance: 0.2,
+    melodyTypes: ['sine', 'triangle'],
+    octaveShifts: [1, 2],
+    pluckFreqMultiplier: 2.0,
+    pluckDecay: 0.35,
+    successNotes: [523.25, 659.25, 783.99, 1046.50],
+    successNoteGap: 90,
+    milestoneChime: [523.25, 659.25, 783.99, 1046.50, 1318.51],
+    label: '太虚幻境'
+  }
+}
 
 export const getChapterById = (id: string): Chapter | undefined => {
   return chapters.find(ch => ch.id === id)

@@ -265,6 +265,28 @@ export interface SnapshotStorage {
   currentSnapshotId: string | null
 }
 
+export interface ChapterSoundscape {
+  droneBase: number
+  droneHarmonic: number
+  droneGain: number
+  harmonicGain: number
+  droneAnimCycle: number
+  scale: number[]
+  melodyInterval: number
+  melodyAttack: number
+  melodyDecay: number
+  melodyPeakGain: number
+  melodySkipChance: number
+  melodyTypes: OscillatorType[]
+  octaveShifts: number[]
+  pluckFreqMultiplier: number
+  pluckDecay: number
+  successNotes: number[]
+  successNoteGap: number
+  milestoneChime: number[]
+  label: string
+}
+
 export type ThemeDecorationType = 'stars' | 'flowers' | 'waves' | 'mountains' | 'clouds' | 'fireflies' | 'leaves' | 'snow'
 
 export interface ThemeBackground {
