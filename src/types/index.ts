@@ -96,7 +96,7 @@ export interface QuestState {
   claimedRewards: string[]
   earnedTitles: string[]
   activeWeightBoosts: Record<string, number>
-  unlockedRewardPhraseIds: string[]
+  chapterRewardPhrases: Record<string, Phrase[]>
 }
 
 export interface ScoreWeights {

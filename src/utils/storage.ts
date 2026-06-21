@@ -1,4 +1,4 @@
-import type { Composition, GameState, QuestState } from '@/types'
+import type { Composition, GameState, QuestState, Phrase } from '@/types'
 
 const STORAGE_KEYS = {
   COMPOSITIONS: 'poem_slices_compositions',
@@ -12,7 +12,7 @@ const DEFAULT_QUEST_STATE: QuestState = {
   claimedRewards: [],
   earnedTitles: [],
   activeWeightBoosts: {},
-  unlockedRewardPhraseIds: []
+  chapterRewardPhrases: {}
 }
 
 const DEFAULT_STATE: GameState = {
@@ -161,12 +161,13 @@ export const addWeightBoost = (dimension: string, boost: number): void => {
   saveQuestState(state)
 }
 
-export const addRewardPhraseId = (phraseId: string): void => {
+export const addChapterRewardPhrase = (chapterId: string, phrase: Phrase): void => {
   const state = loadQuestState()
-  if (!state.unlockedRewardPhraseIds.includes(phraseId)) {
-    state.unlockedRewardPhraseIds.push(phraseId)
-    saveQuestState(state)
+  if (!state.chapterRewardPhrases[chapterId]) {
+    state.chapterRewardPhrases[chapterId] = []
   }
+  state.chapterRewardPhrases[chapterId].push(phrase)
+  saveQuestState(state)
 }
 
 export const addEarnedTitle = (title: string): void => {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition } from '@/types'
 import { chapters, getChapterById } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase } from '@/data/phrases'
@@ -12,7 +12,7 @@ import {
 import {
   loadQuestState, saveQuestState, unlockQuest, completeQuest, claimReward,
   isQuestUnlocked, isQuestCompleted, isRewardClaimed, addWeightBoost,
-  addRewardPhraseId, addEarnedTitle
+  addChapterRewardPhrase, addEarnedTitle
 } from '@/utils/storage'
 import { musicPlayer } from '@/utils/music'
 
@@ -37,7 +37,6 @@ const showSaveDialog = ref(false)
 const showQuestPanel = ref(false)
 const justUnlockedChapter = ref<string | null>(null)
 const questState = ref<QuestState>(loadQuestState())
-const rewardPhrasesList = ref<Phrase[]>([])
 
 const canvasBoardRef = ref<InstanceType<typeof CanvasBoard> | null>(null)
 
@@ -108,7 +107,8 @@ const availableQuestCount = computed(() => {
 const enhancedChapterPhrases = computed((): Phrase[] => {
   const ch = currentChapter.value
   if (!ch) return []
-  return [...ch.phrases, ...rewardPhrasesList.value]
+  const rewardPhrases = questState.value.chapterRewardPhrases[currentChapterId.value] || []
+  return [...ch.phrases, ...rewardPhrases]
 })
 
 const handlePhraseSelect = (phrase: Phrase) => {
@@ -345,21 +345,32 @@ const handleClaimReward = (questId: string) => {
     switch (reward.type) {
       case 'phrase_unlock': {
         const texts = reward.params.phraseTexts as string[]
+        const targetChapter = quest.chapterId
         texts.forEach(text => {
           const rp = rewardPhrases[text]
           if (rp) {
             const phrase = createPhrase(rp.text, rp.category, rp.weight)
-            rewardPhrasesList.value.push(phrase)
-            addRewardPhraseId(phrase.id)
+            addChapterRewardPhrase(targetChapter, phrase)
           }
         })
         break
       }
       case 'phrase_pool_refresh': {
-        const category = reward.params.addCategory as any
+        const targetChapterId = reward.params.chapterId as string
+        const category = reward.params.addCategory as PhraseCategory
         const count = reward.params.count as number
         const refreshed = refreshPoolByCategory(category, count)
-        rewardPhrasesList.value.push(...refreshed)
+        if (targetChapterId === '__all__') {
+          chapters.forEach(ch => {
+            refreshed.forEach(p => {
+              addChapterRewardPhrase(ch.id, { ...p, id: `${p.id}_${ch.id}` })
+            })
+          })
+        } else {
+          refreshed.forEach(p => {
+            addChapterRewardPhrase(targetChapterId, p)
+          })
+        }
         break
       }
       case 'score_weight_boost': {
