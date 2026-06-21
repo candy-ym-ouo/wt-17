@@ -356,3 +356,132 @@ export const getCipaiScoreForPhrases = (
   
   return { score, checkResults, recommendations }
 }
+
+export const getCurrentLineIndex = (phrases: Phrase[], cipai: CipaiTemplate): number => {
+  const lines = phrasesToLines(phrases)
+  const idx = lines.findIndex(l => l.length === 0)
+  return idx === -1 ? Math.min(lines.length, cipai.lines.length) : idx
+}
+
+export const getRhymeCharsFromLines = (phrases: Phrase[], cipai: CipaiTemplate): string[] => {
+  const lines = phrasesToLines(phrases)
+  const rhymeChars: string[] = []
+  
+  for (let i = 0; i < Math.min(lines.length, cipai.lines.length); i++) {
+    if (cipai.lines[i].rhyme && lines[i].length > 0) {
+      rhymeChars.push(lines[i][lines[i].length - 1])
+    }
+  }
+  
+  return rhymeChars
+}
+
+export const calculatePhraseMatchScore = (
+  phrase: Phrase,
+  targetLine: CipaiLine | undefined,
+  rhymeChars: string[],
+  ruleSet: CipaiScoringRuleSet
+): number => {
+  if (!targetLine) return 0.5
+  
+  let score = 0
+  
+  const charDiff = Math.abs(phrase.text.length - targetLine.charCount)
+  const charScore = Math.max(0, 1 - charDiff / Math.max(targetLine.charCount, 1))
+  score += charScore * 0.4
+  
+  const { matchRate: toneMatchRate } = checkTonePattern(phrase.text, targetLine.tonePattern)
+  score += toneMatchRate * 0.3
+  
+  if (targetLine.rhyme && rhymeChars.length > 0) {
+    const lastChar = phrase.text[phrase.text.length - 1]
+    const lastCharTone = getToneOfChar(lastChar)
+    const hasRhymeMatch = rhymeChars.some(rc => {
+      const rcTone = getToneOfChar(rc)
+      return rc === lastChar || rcTone === lastCharTone
+    })
+    score += hasRhymeMatch ? 0.3 : 0
+  } else if (targetLine.rhyme) {
+    score += 0.15
+  } else {
+    score += 0.15
+  }
+  
+  const rarityBonus = phrase.rarity === 'legendary' ? 0.1 :
+                      phrase.rarity === 'epic' ? 0.05 :
+                      phrase.rarity === 'rare' ? 0.02 : 0
+  score = Math.min(score + rarityBonus, 1)
+  
+  return score
+}
+
+export const sortPhrasesForCipai = (
+  phrases: Phrase[],
+  cipai: CipaiTemplate | null,
+  placedPhrases: Phrase[],
+  ruleSet: CipaiScoringRuleSet
+): Phrase[] => {
+  if (!cipai) return phrases
+  
+  const currentLineIdx = getCurrentLineIndex(placedPhrases, cipai)
+  const targetLine = cipai.lines[currentLineIdx]
+  const rhymeChars = getRhymeCharsFromLines(placedPhrases, cipai)
+  
+  const scored = phrases.map(phrase => ({
+    phrase,
+    score: calculatePhraseMatchScore(phrase, targetLine, rhymeChars, ruleSet),
+  }))
+  
+  scored.sort((a, b) => b.score - a.score)
+  
+  return scored.map(s => s.phrase)
+}
+
+export const getCipaiPhraseRecommendations = (
+  poolPhrases: Phrase[],
+  cipai: CipaiTemplate | null,
+  placedPhrases: Phrase[],
+  ruleSet: CipaiScoringRuleSet,
+  limit: number = 10
+): Phrase[] => {
+  if (!cipai) return []
+  
+  const sorted = sortPhrasesForCipai(poolPhrases, cipai, placedPhrases, ruleSet)
+  return sorted.slice(0, limit)
+}
+
+export const getCipaiProgress = (
+  placedPhrases: Phrase[],
+  cipai: CipaiTemplate | null
+): { filledLines: number; totalLines: number; filledChars: number; totalChars: number; percentage: number } => {
+  if (!cipai) {
+    return { filledLines: 0, totalLines: 0, filledChars: 0, totalChars: 0, percentage: 0 }
+  }
+  
+  const lines = phrasesToLines(placedPhrases)
+  const filledLines = Math.min(lines.filter(l => l.length > 0).length, cipai.lines.length)
+  const totalLines = cipai.lines.length
+  const filledChars = lines.reduce((sum, l) => sum + l.length, 0)
+  const totalChars = cipai.totalChars
+  const percentage = totalChars > 0 ? Math.round((filledChars / totalChars) * 100) : 0
+  
+  return { filledLines, totalLines, filledChars, totalChars, percentage }
+}
+
+export const getNextLineHint = (
+  placedPhrases: Phrase[],
+  cipai: CipaiTemplate | null
+): { lineIndex: number; charCount: number; isRhyme: string; description: string } | null => {
+  if (!cipai) return null
+  
+  const currentIdx = getCurrentLineIndex(placedPhrases, cipai)
+  if (currentIdx >= cipai.lines.length) return null
+  
+  const line = cipai.lines[currentIdx]
+  return {
+    lineIndex: currentIdx,
+    charCount: line.charCount,
+    isRhyme: line.rhyme ? '是' : '否',
+    description: line.description || '',
+  }
+}

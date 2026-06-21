@@ -2,32 +2,39 @@
 import { ref, computed, watch } from 'vue'
 import type { CipaiTemplate, CipaiScoringMode, Phrase, CipaiScoreBreakdown, CipaiCheckResult, CipaiRecommendation } from '@/types'
 import { cipaiTemplates, cipaiScoringRuleSets, getDifficultyLabel, getDifficultyColor } from '@/data/cipaiTemplates'
-import { calculateCipaiScore, phrasesToLines, generateCipaiRecommendations, checkCipaiLine, getToneOfChar } from '@/utils/cipaiWorkshop'
+import { calculateCipaiScore, phrasesToLines, checkCipaiLine, getToneOfChar, getCipaiPhraseRecommendations, getCurrentLineIndex } from '@/utils/cipaiWorkshop'
 
 interface Props {
   phrases: Phrase[]
+  poolPhrases?: Phrase[]
   visible: boolean
+  activeCipaiId?: string | null
+  scoringMode?: CipaiScoringMode
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  poolPhrases: () => [],
+  activeCipaiId: null,
+  scoringMode: 'standard',
+})
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'selectCipai', cipai: CipaiTemplate): void
   (e: 'changeScoringMode', mode: CipaiScoringMode): void
+  (e: 'selectPhrase', phrase: Phrase): void
 }>()
 
-const selectedCipaiId = ref<string>(cipaiTemplates[0]?.id || '')
-const scoringMode = ref<CipaiScoringMode>('standard')
 const showExample = ref(false)
 const activeTab = ref<'template' | 'guide'>('template')
 
 const selectedCipai = computed((): CipaiTemplate | undefined => {
-  return cipaiTemplates.find(c => c.id === selectedCipaiId.value)
+  const id = props.activeCipaiId || cipaiTemplates[0]?.id
+  return cipaiTemplates.find(c => c.id === id)
 })
 
 const currentRuleSet = computed(() => {
-  return cipaiScoringRuleSets.find(r => r.mode === scoringMode.value)
+  return cipaiScoringRuleSets.find(r => r.mode === props.scoringMode)
 })
 
 const lines = computed(() => phrasesToLines(props.phrases))
@@ -58,14 +65,22 @@ const checkResults = computed((): CipaiCheckResult[] => {
   return results
 })
 
-const recommendations = computed((): CipaiRecommendation[] => {
-  if (!selectedCipai.value || !currentRuleSet.value) return []
-  return generateCipaiRecommendations(lines.value, selectedCipai.value, props.phrases, currentRuleSet.value)
+const recommendedPhrases = computed((): Phrase[] => {
+  if (!selectedCipai.value || !currentRuleSet.value || !props.poolPhrases?.length) {
+    return []
+  }
+  return getCipaiPhraseRecommendations(
+    props.poolPhrases,
+    selectedCipai.value,
+    props.phrases,
+    currentRuleSet.value,
+    8
+  )
 })
 
 const currentLineIndex = computed(() => {
-  const idx = lines.value.findIndex(l => l.length === 0)
-  return idx === -1 ? lines.value.length : idx
+  if (!selectedCipai.value) return 0
+  return getCurrentLineIndex(props.phrases, selectedCipai.value)
 })
 
 const getToneLabel = (tone: string): string => {
@@ -87,12 +102,10 @@ const getLineStatusClass = (result: CipaiCheckResult): string => {
 }
 
 const handleSelectCipai = (cipai: CipaiTemplate) => {
-  selectedCipaiId.value = cipai.id
   emit('selectCipai', cipai)
 }
 
 const handleScoringModeChange = (mode: CipaiScoringMode) => {
-  scoringMode.value = mode
   emit('changeScoringMode', mode)
 }
 
@@ -116,12 +129,6 @@ const scoreGrade = computed(() => {
   if (total >= 75) return { label: '合律', color: '#5b7a8c' }
   if (total >= 60) return { label: '尚可', color: '#a8a498' }
   return { label: '待酌', color: '#6b6858' }
-})
-
-watch(() => props.visible, (val) => {
-  if (val && !selectedCipaiId.value && cipaiTemplates.length > 0) {
-    selectedCipaiId.value = cipaiTemplates[0].id
-  }
 })
 </script>
 
@@ -158,7 +165,7 @@ watch(() => props.visible, (val) => {
                       v-for="cipai in diffTemplates"
                       :key="cipai.id"
                       class="cipai-item-btn"
-                      :class="{ active: selectedCipaiId === cipai.id }"
+                      :class="{ active: activeCipaiId === cipai.id }"
                       @click="handleSelectCipai(cipai)"
                     >
                       <span class="cipai-name">{{ cipai.name }}</span>
@@ -176,7 +183,7 @@ watch(() => props.visible, (val) => {
                   v-for="rule in cipaiScoringRuleSets"
                   :key="rule.mode"
                   class="mode-btn"
-                  :class="{ active: scoringMode === rule.mode }"
+                  :class="{ active: props.scoringMode === rule.mode }"
                   @click="handleScoringModeChange(rule.mode as CipaiScoringMode)"
                 >
                   <span class="mode-label">{{ rule.label }}</span>
@@ -391,29 +398,25 @@ watch(() => props.visible, (val) => {
                     </div>
                   </div>
                   
-                  <div v-if="recommendations.length > 0" class="recommendations">
-                    <div class="rec-title">选词推荐</div>
-                    <div class="rec-list">
-                      <div 
-                        v-for="(rec, idx) in recommendations" 
-                        :key="idx"
-                        class="rec-item"
-                        :class="`priority-${rec.priority}`"
+                  <div v-if="recommendedPhrases.length > 0" class="recommendations">
+                    <div class="rec-title">
+                      <span>选词推荐</span>
+                      <span class="rec-subtitle">点击添加到画布</span>
+                    </div>
+                    <div class="rec-phrase-grid">
+                      <button
+                        v-for="phrase in recommendedPhrases"
+                        :key="phrase.id"
+                        class="rec-phrase-card"
+                        :class="`rarity-${phrase.rarity}`"
+                        @click="emit('selectPhrase', phrase)"
                       >
-                        <div class="rec-header">
-                          <span class="rec-type">{{ rec.type === 'char_count' ? '句式' : rec.type === 'rhyme' ? '韵脚' : rec.type === 'tone' ? '平仄' : '意象' }}</span>
-                          <span class="rec-desc">{{ rec.description }}</span>
+                        <div class="rec-phrase-text">{{ phrase.text }}</div>
+                        <div class="rec-phrase-meta">
+                          <span class="rec-phrase-count">{{ phrase.text.length }}字</span>
+                          <span class="rec-phrase-category">{{ phrase.category }}</span>
                         </div>
-                        <div class="rec-suggestions">
-                          <span 
-                            v-for="(sug, si) in rec.suggestions" 
-                            :key="si"
-                            class="suggestion-chip"
-                          >
-                            {{ sug }}
-                          </span>
-                        </div>
-                      </div>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1170,69 +1173,81 @@ watch(() => props.visible, (val) => {
 }
 
 .rec-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 14px;
   color: var(--text-primary);
   font-weight: 500;
   margin-bottom: 12px;
 }
 
-.rec-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.rec-item {
-  padding: 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-}
-
-.rec-item.priority-high {
-  border-color: rgba(201, 168, 108, 0.4);
-  background: rgba(201, 168, 108, 0.05);
-}
-
-.rec-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.rec-type {
-  padding: 2px 8px;
-  background: var(--accent-gold);
-  color: #fff;
-  border-radius: 4px;
+.rec-subtitle {
   font-size: 11px;
+  color: var(--text-muted);
+  font-weight: normal;
 }
 
-.rec-desc {
-  font-size: 12px;
-  color: var(--text-secondary);
+.rec-phrase-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
 }
 
-.rec-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.suggestion-chip {
-  padding: 4px 12px;
-  background: rgba(255, 255, 255, 0.08);
+.rec-phrase-card {
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  font-size: 13px;
-  color: var(--text-primary);
+  border-radius: 8px;
+  text-align: left;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.suggestion-chip:hover {
-  background: rgba(201, 168, 108, 0.15);
+.rec-phrase-card:hover {
+  background: rgba(201, 168, 108, 0.1);
   border-color: var(--accent-gold);
+  transform: translateY(-2px);
+}
+
+.rec-phrase-card.rarity-legendary {
+  border-color: rgba(201, 168, 108, 0.5);
+  background: linear-gradient(135deg, rgba(201, 168, 108, 0.1), rgba(255, 215, 150, 0.05));
+}
+
+.rec-phrase-card.rarity-epic {
+  border-color: rgba(139, 69, 87, 0.4);
+}
+
+.rec-phrase-card.rarity-rare {
+  border-color: rgba(91, 122, 140, 0.4);
+}
+
+.rec-phrase-text {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+  margin-bottom: 6px;
+  font-family: var(--font-serif);
+}
+
+.rec-phrase-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.rec-phrase-count {
+  padding: 1px 6px;
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+  border-radius: 3px;
+}
+
+.rec-phrase-category {
+  opacity: 0.8;
 }
 
 .modal-enter-active,

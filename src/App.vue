@@ -34,6 +34,9 @@ import { musicPlayer } from '@/utils/music'
 import { generateWelcomeContent } from '@/utils/onboarding'
 import { poetryGatherings, getGatheringById, getGatheringChapterById, getGatheringChapterPhrases } from '@/data/poetryGatherings'
 import { loadGatheringState, saveGatheringState, setGatheringActive, clearActiveGathering, saveChapterResult, evaluateBonusRules, claimGatheringReward, archiveGathering, isRewardClaimed as isGatheringRewardClaimed } from '@/utils/poetryGathering'
+import { getCipaiById, getCipaiScoringRuleByMode, cipaiTemplates } from '@/data/cipaiTemplates'
+import { sortPhrasesForCipai, getCipaiProgress, getNextLineHint, getCipaiScoreForPhrases } from '@/utils/cipaiWorkshop'
+import type { CipaiTemplate, CipaiScoringMode, CipaiScoreBreakdown } from '@/types'
 
 import TopHeader from '@/components/TopHeader.vue'
 import PhrasePool from '@/components/PhrasePool.vue'
@@ -124,7 +127,8 @@ const activeGatheringChapterId = ref<string | null>(null)
 const gatheringBoardPhrases = ref<Phrase[]>([])
 const gatheringElapsedSeconds = ref(0)
 const showCipaiWorkshop = ref(false)
-const cipaiScoringMode = ref<'relaxed' | 'standard' | 'strict'>('standard')
+const activeCipaiId = ref<string | null>(null)
+const cipaiScoringMode = ref<CipaiScoringMode>('standard')
 
 let autoSaveTimer: number | null = null
 
@@ -514,6 +518,98 @@ const handleThemesChanged = () => {
   themeState.value = loadThemeState()
   currentThemeId.value = getCurrentThemeId()
 }
+
+const activeCipai = computed((): CipaiTemplate | null => {
+  if (!activeCipaiId.value) return null
+  return getCipaiById(activeCipaiId.value) || null
+})
+
+const currentCipaiRuleSet = computed(() => {
+  return getCipaiScoringRuleByMode(cipaiScoringMode.value) || null
+})
+
+const cipaiSortedPhrases = computed((): Phrase[] => {
+  if (!activeCipai.value || !currentCipaiRuleSet.value) {
+    return enhancedChapterPhrases.value
+  }
+  return sortPhrasesForCipai(
+    enhancedChapterPhrases.value,
+    activeCipai.value,
+    boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
+    })),
+    currentCipaiRuleSet.value
+  )
+})
+
+const cipaiScore = computed((): CipaiScoreBreakdown | null => {
+  if (!activeCipai.value) return null
+  const result = getCipaiScoreForPhrases(
+    phrasesForScoring.value,
+    activeCipaiId.value!,
+    cipaiScoringMode.value
+  )
+  return result?.score || null
+})
+
+const cipaiProgress = computed(() => {
+  return getCipaiProgress(
+    boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
+    })),
+    activeCipai.value
+  )
+})
+
+const nextLineHint = computed(() => {
+  return getNextLineHint(
+    boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
+    })),
+    activeCipai.value
+  )
+})
+
+const handleSelectCipai = (cipai: CipaiTemplate) => {
+  activeCipaiId.value = cipai.id
+  musicPlayer.playPluckSound()
+}
+
+const handleChangeCipaiScoringMode = (mode: CipaiScoringMode) => {
+  cipaiScoringMode.value = mode
+  musicPlayer.playPluckSound()
+}
+
+const handleCipaiRecommendPhrase = (phrase: Phrase) => {
+  if (placedPhraseIds.value.has(phrase.id)) {
+    return
+  }
+  handlePhraseSelect(phrase)
+}
+
+const combinedScore = computed((): ScoreBreakdown => {
+  const baseScore = score.value
+  if (!activeCipai.value || !cipaiScore.value) {
+    return baseScore
+  }
+  
+  const cipaiBonus = cipaiScore.value.total * 0.3
+  const total = Math.min(Math.round(baseScore.total + cipaiBonus), 100)
+  
+  return {
+    ...baseScore,
+    total,
+  }
+})
 
 const collectedPhraseTexts = computed((): Set<string> => {
   const collected = questState.value.phraseCollection.collectedPhrases
@@ -1496,6 +1592,30 @@ watch(currentChapterId, (newId) => {
           </div>
         </div>
         
+        <div v-if="activeCipai" class="cipai-status-bar">
+          <div class="cipai-status-header">
+            <span class="cipai-status-icon">📜</span>
+            <span class="cipai-status-name">{{ activeCipai.name }}</span>
+            <span class="cipai-status-mode">{{ currentCipaiRuleSet?.label || '正格' }}</span>
+            <button class="cipai-status-close" @click="activeCipaiId = null" title="退出词牌模式">✕</button>
+          </div>
+          <div class="cipai-status-progress">
+            <div class="progress-label">
+              <span>第 {{ cipaiProgress.filledLines }}/{{ cipaiProgress.totalLines }} 句</span>
+              <span>{{ cipaiProgress.percentage }}%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" :style="{ width: cipaiProgress.percentage + '%' }"></div>
+            </div>
+          </div>
+          <div v-if="nextLineHint" class="cipai-next-hint">
+            <span class="hint-label">下一句：</span>
+            <span class="hint-content">{{ nextLineHint.charCount }}字</span>
+            <span v-if="nextLineHint.isRhyme === '是'" class="hint-rhyme">韵</span>
+            <span v-if="nextLineHint.description" class="hint-desc">{{ nextLineHint.description }}</span>
+          </div>
+        </div>
+        
         <div class="board-wrapper">
           <CanvasBoard
             ref="canvasBoardRef"
@@ -1512,32 +1632,34 @@ watch(currentChapterId, (newId) => {
       <aside class="right-panel">
         <div class="panel-section">
           <ScorePanel
-            :score="score"
+            :score="activeCipai ? combinedScore : score"
             :phrasesCount="boardPhrases.length"
             :targetCount="currentChapter?.targetPhraseCount || 5"
             :weightBoosts="questState.activeWeightBoosts"
             :phrases="phrasesForScoring"
             :chapter="currentChapter"
+            :cipaiScore="cipaiScore"
+            :cipaiName="activeCipai?.name || null"
           />
         </div>
         
         <div class="panel-section pool-section">
           <div class="section-header">
             <div class="section-title-row">
-              <span class="section-title">词句池</span>
+              <span class="section-title">{{ activeCipai ? '词句推荐' : '词句池' }}</span>
               <button class="collection-badge interactive" title="查看词句图鉴" @click="showCollection = true">
                 ✦ {{ collectionProgress }} / {{ totalPhraseCount }}
               </button>
             </div>
             <span class="section-count">
-              {{ (enhancedChapterPhrases.length) - boardPhrases.length }}
+              {{ (cipaiSortedPhrases.length) - boardPhrases.length }}
               /
-              {{ enhancedChapterPhrases.length }}
+              {{ cipaiSortedPhrases.length }}
             </span>
           </div>
           <div class="pool-wrapper">
             <PhrasePool
-              :phrases="enhancedChapterPhrases"
+              :phrases="cipaiSortedPhrases"
               :placedPhraseIds="placedPhraseIds"
               :collectedPhrases="collectedPhraseTexts"
               @select="handlePhraseSelect"
@@ -1706,8 +1828,13 @@ watch(currentChapterId, (newId) => {
     <CipaiWorkshop
       :visible="showCipaiWorkshop"
       :phrases="phrasesForScoring"
+      :poolPhrases="enhancedChapterPhrases"
+      :activeCipaiId="activeCipaiId"
+      :scoringMode="cipaiScoringMode"
       @close="showCipaiWorkshop = false"
-      @changeScoringMode="cipaiScoringMode = $event"
+      @selectCipai="handleSelectCipai"
+      @changeScoringMode="handleChangeCipaiScoringMode"
+      @selectPhrase="handleCipaiRecommendPhrase"
     />
     
     <div class="bg-decoration">
@@ -2070,6 +2197,115 @@ watch(currentChapterId, (newId) => {
 .board-wrapper {
   flex: 1;
   min-height: 0;
+}
+
+.cipai-status-bar {
+  background: linear-gradient(135deg, rgba(201, 168, 108, 0.12), rgba(91, 122, 140, 0.08));
+  border: 1px solid rgba(201, 168, 108, 0.3);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.cipai-status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cipai-status-icon {
+  font-size: 16px;
+}
+
+.cipai-status-name {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-family: var(--font-brush);
+  font-size: 18px;
+}
+
+.cipai-status-mode {
+  padding: 2px 8px;
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.cipai-status-close {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  border-radius: 4px;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.cipai-status-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.cipai-status-progress {
+  margin-bottom: 8px;
+}
+
+.cipai-status-progress .progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.cipai-status-progress .progress-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.cipai-status-progress .progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-gold), #e8c996);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.cipai-next-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.hint-label {
+  color: var(--text-muted);
+}
+
+.hint-content {
+  color: var(--accent-gold);
+  font-weight: 500;
+}
+
+.hint-rhyme {
+  padding: 1px 6px;
+  background: var(--accent-gold);
+  color: #fff;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.hint-desc {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .right-panel {

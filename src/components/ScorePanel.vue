@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { ScoreBreakdown, DiagnosticReport, Phrase, Chapter, PhraseRarity, SettlementRule, SettlementTriggeredRule } from '@/types'
+import type { ScoreBreakdown, DiagnosticReport, Phrase, Chapter, PhraseRarity, SettlementRule, SettlementTriggeredRule, CipaiScoreBreakdown } from '@/types'
 import { getScoreGrade, generateDiagnosticReport, applySettlementRules } from '@/utils/scoring'
 import { rarityLabels, rarityColors, rarityScoreBonus } from '@/data/phrases'
 
@@ -11,9 +11,14 @@ interface Props {
   weightBoosts?: Record<string, number>
   phrases?: Phrase[]
   chapter?: Chapter | null
+  cipaiScore?: CipaiScoreBreakdown | null
+  cipaiName?: string | null
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  cipaiScore: null,
+  cipaiName: null,
+})
 
 const isDiagnosticMode = ref(false)
 const activeDiagnosticTab = ref<'loss' | 'theme' | 'balance' | 'layout' | 'revision' | 'settlement'>('loss')
@@ -264,6 +269,37 @@ const dimensionColors: Record<string, string> = {
         <div v-if="hasBoosts" class="boost-notice">
           <span class="boost-icon">✧</span>
           <span class="boost-text">评分加成生效中</span>
+        </div>
+        
+        <div v-if="cipaiScore && cipaiName" class="cipai-score-section">
+          <div class="cipai-score-header">
+            <span class="cipai-score-icon">📜</span>
+            <span class="cipai-score-name">{{ cipaiName }}</span>
+            <span class="cipai-score-total">+{{ Math.round(cipaiScore.total * 0.3) }}</span>
+          </div>
+          <div class="cipai-score-bars">
+            <div class="cipai-bar-item">
+              <span class="cipai-bar-label">句式</span>
+              <div class="cipai-bar-track">
+                <div class="cipai-bar-fill" :style="{ width: cipaiScore.formMatch + '%' }"></div>
+              </div>
+              <span class="cipai-bar-value">{{ cipaiScore.formMatch }}</span>
+            </div>
+            <div class="cipai-bar-item">
+              <span class="cipai-bar-label">平仄</span>
+              <div class="cipai-bar-track">
+                <div class="cipai-bar-fill" :style="{ width: cipaiScore.tonePattern + '%' }"></div>
+              </div>
+              <span class="cipai-bar-value">{{ cipaiScore.tonePattern }}</span>
+            </div>
+            <div class="cipai-bar-item">
+              <span class="cipai-bar-label">韵脚</span>
+              <div class="cipai-bar-track">
+                <div class="cipai-bar-fill" :style="{ width: cipaiScore.rhyme + '%' }"></div>
+              </div>
+              <span class="cipai-bar-value">{{ cipaiScore.rhyme }}</span>
+            </div>
+          </div>
         </div>
         
         <div v-if="rarityStats.hasRare && phrases && phrases.length > 0" class="rarity-notice">
@@ -962,6 +998,80 @@ const dimensionColors: Record<string, string> = {
   font-size: 11px;
   color: var(--accent-gold);
   letter-spacing: 1px;
+}
+
+.cipai-score-section {
+  background: linear-gradient(135deg, rgba(201, 168, 108, 0.1), rgba(91, 122, 140, 0.08));
+  border: 1px solid rgba(201, 168, 108, 0.25);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.cipai-score-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cipai-score-icon {
+  font-size: 14px;
+}
+
+.cipai-score-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-family: var(--font-brush);
+  font-size: 16px;
+}
+
+.cipai-score-total {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-gold);
+}
+
+.cipai-score-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cipai-bar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cipai-bar-label {
+  width: 32px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.cipai-bar-track {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.cipai-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-gold), #e8c996);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.cipai-bar-value {
+  width: 32px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .rarity-notice {
