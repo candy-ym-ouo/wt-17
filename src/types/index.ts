@@ -95,6 +95,46 @@ export interface Composition {
   createdAt: number
   updatedAt: number
   title: string
+  isPinned?: boolean
+  pinnedAt?: number
+  collectionIds?: string[]
+}
+
+export interface Collection {
+  id: string
+  name: string
+  description: string
+  accentColor: string
+  compositionIds: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export type ScoreGrade = '神品' | '妙品' | '佳品' | '能品' | '习作'
+
+export type GroupBy = 'chapter' | 'grade' | 'date' | 'collection' | 'none'
+
+export type SortBy = 'date' | 'score' | 'title'
+
+export interface FilterState {
+  chapterId: string | null
+  grade: ScoreGrade | null
+  dateRange: { start: number | null; end: number | null } | null
+  collectionId: string | null
+  searchText: string
+}
+
+export interface DateGroup {
+  key: string
+  label: string
+  start: number
+  end: number
+}
+
+export interface GroupedCompositions {
+  groupKey: string
+  groupLabel: string
+  compositions: Composition[]
 }
 
 export interface GameState {

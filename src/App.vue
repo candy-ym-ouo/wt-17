@@ -8,9 +8,13 @@ import { calculateScore, generatePoemTitle } from '@/utils/scoring'
 import {
   loadGameState, saveGameState, loadCompositions, saveComposition, deleteComposition,
   unlockChapter, isChapterUnlocked,
-  saveEditingComposition, loadEditingComposition, clearEditingComposition
+  saveEditingComposition, loadEditingComposition, clearEditingComposition,
+  loadCollections, createCollection, deleteCollection, updateCollection,
+  addCompositionToCollection, removeCompositionFromCollection,
+  pinComposition, unpinComposition
 } from '@/utils/storage'
 import type { EditingCompositionState } from '@/utils/storage'
+import type { Collection } from '@/types'
 import {
   loadQuestState, saveQuestState, unlockQuest, completeQuest, claimReward,
   isQuestUnlocked, isQuestCompleted, isRewardClaimed, addWeightBoost,
@@ -37,6 +41,7 @@ const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
 const boardPhrases = ref<CanvasPhrase[]>([])
 const compositions = ref<Composition[]>(loadCompositions())
+const collections = ref<Collection[]>(loadCollections())
 
 const showChapters = ref(false)
 const showPortfolio = ref(false)
@@ -430,6 +435,56 @@ const handleDeleteComposition = (id: string) => {
   }
 }
 
+const handlePinComposition = (id: string) => {
+  pinComposition(id)
+  compositions.value = loadCompositions()
+  musicPlayer.playPluckSound()
+}
+
+const handleUnpinComposition = (id: string) => {
+  unpinComposition(id)
+  compositions.value = loadCompositions()
+  musicPlayer.playPluckSound()
+}
+
+const handleAddToCollection = (compositionId: string, collectionId: string) => {
+  addCompositionToCollection(compositionId, collectionId)
+  compositions.value = loadCompositions()
+  collections.value = loadCollections()
+  musicPlayer.playPluckSound()
+}
+
+const handleRemoveFromCollection = (compositionId: string, collectionId: string) => {
+  removeCompositionFromCollection(compositionId, collectionId)
+  compositions.value = loadCompositions()
+  collections.value = loadCollections()
+  musicPlayer.playPluckSound()
+}
+
+const handleCreateCollection = (name: string, description: string, accentColor: string) => {
+  createCollection(name, description, accentColor)
+  collections.value = loadCollections()
+  musicPlayer.playSuccessSound()
+}
+
+const handleDeleteCollection = (collectionId: string) => {
+  deleteCollection(collectionId)
+  collections.value = loadCollections()
+  compositions.value = loadCompositions()
+  musicPlayer.playPluckSound()
+}
+
+const handleUpdateCollection = (collectionId: string, updates: Partial<Omit<Collection, 'id' | 'createdAt'>>) => {
+  updateCollection(collectionId, updates)
+  collections.value = loadCollections()
+  musicPlayer.playPluckSound()
+}
+
+const handleRefreshPortfolio = () => {
+  compositions.value = loadCompositions()
+  collections.value = loadCollections()
+}
+
 const handleNextChapter = () => {
   showSaveDialog.value = false
   if (justUnlockedChapter.value) {
@@ -708,11 +763,20 @@ watch(boardPhrases, () => {
     <Portfolio
       v-if="showPortfolio"
       :compositions="compositions"
+      :collections="collections"
       :chaptersTitles="chaptersTitles"
       :editingCompositionId="editingComposition.compositionId"
       @load="handleLoadComposition"
       @delete="handleDeleteComposition"
       @close="showPortfolio = false"
+      @pin="handlePinComposition"
+      @unpin="handleUnpinComposition"
+      @addToCollection="handleAddToCollection"
+      @removeFromCollection="handleRemoveFromCollection"
+      @createCollection="handleCreateCollection"
+      @deleteCollection="handleDeleteCollection"
+      @updateCollection="handleUpdateCollection"
+      @refresh="handleRefreshPortfolio"
     />
     
     <SaveDialog

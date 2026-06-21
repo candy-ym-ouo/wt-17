@@ -1,10 +1,11 @@
-import type { Composition, GameState, QuestState, Phrase } from '@/types'
+import type { Composition, GameState, QuestState, Phrase, Collection } from '@/types'
 
 const STORAGE_KEYS = {
   COMPOSITIONS: 'poem_slices_compositions',
   GAME_STATE: 'poem_slices_game_state',
   QUEST_STATE: 'poem_slices_quest_state',
   EDITING_COMPOSITION: 'poem_slices_editing_composition',
+  COLLECTIONS: 'poem_slices_collections',
 }
 
 const DEFAULT_QUEST_STATE: QuestState = {
@@ -211,4 +212,179 @@ export const loadEditingComposition = (): EditingCompositionState => {
 
 export const clearEditingComposition = (): void => {
   localStorage.removeItem(STORAGE_KEYS.EDITING_COMPOSITION)
+}
+
+export const loadCollections = (): Collection[] => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.COLLECTIONS)
+    return data ? JSON.parse(data) : []
+  } catch (e) {
+    console.error('Failed to load collections:', e)
+    return []
+  }
+}
+
+export const saveCollections = (collections: Collection[]): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.COLLECTIONS, JSON.stringify(collections))
+  } catch (e) {
+    console.error('Failed to save collections:', e)
+  }
+}
+
+export const createCollection = (name: string, description: string, accentColor: string): Collection => {
+  const now = Date.now()
+  const collection: Collection = {
+    id: `coll_${now}`,
+    name,
+    description,
+    accentColor,
+    compositionIds: [],
+    createdAt: now,
+    updatedAt: now
+  }
+  const collections = loadCollections()
+  collections.push(collection)
+  saveCollections(collections)
+  return collection
+}
+
+export const updateCollection = (collectionId: string, updates: Partial<Omit<Collection, 'id' | 'createdAt'>>): void => {
+  const collections = loadCollections()
+  const index = collections.findIndex(c => c.id === collectionId)
+  if (index >= 0) {
+    collections[index] = {
+      ...collections[index],
+      ...updates,
+      updatedAt: Date.now()
+    }
+    saveCollections(collections)
+  }
+}
+
+export const deleteCollection = (collectionId: string): void => {
+  const collections = loadCollections()
+  const filtered = collections.filter(c => c.id !== collectionId)
+  saveCollections(filtered)
+  const compositions = loadCompositions()
+  const updatedComps = compositions.map(comp => {
+    if (comp.collectionIds?.includes(collectionId)) {
+      return {
+        ...comp,
+        collectionIds: comp.collectionIds.filter(id => id !== collectionId)
+      }
+    }
+    return comp
+  })
+  saveCompositions(updatedComps)
+}
+
+export const addCompositionToCollection = (compositionId: string, collectionId: string): void => {
+  const compositions = loadCompositions()
+  const compIndex = compositions.findIndex(c => c.id === compositionId)
+  if (compIndex >= 0) {
+    const comp = compositions[compIndex]
+    const collectionIds = comp.collectionIds || []
+    if (!collectionIds.includes(collectionId)) {
+      compositions[compIndex] = {
+        ...comp,
+        collectionIds: [...collectionIds, collectionId],
+        updatedAt: Date.now()
+      }
+      saveCompositions(compositions)
+    }
+  }
+  const collections = loadCollections()
+  const collIndex = collections.findIndex(c => c.id === collectionId)
+  if (collIndex >= 0) {
+    const coll = collections[collIndex]
+    if (!coll.compositionIds.includes(compositionId)) {
+      collections[collIndex] = {
+        ...coll,
+        compositionIds: [...coll.compositionIds, compositionId],
+        updatedAt: Date.now()
+      }
+      saveCollections(collections)
+    }
+  }
+}
+
+export const removeCompositionFromCollection = (compositionId: string, collectionId: string): void => {
+  const compositions = loadCompositions()
+  const compIndex = compositions.findIndex(c => c.id === compositionId)
+  if (compIndex >= 0) {
+    const comp = compositions[compIndex]
+    if (comp.collectionIds) {
+      compositions[compIndex] = {
+        ...comp,
+        collectionIds: comp.collectionIds.filter(id => id !== collectionId),
+        updatedAt: Date.now()
+      }
+      saveCompositions(compositions)
+    }
+  }
+  const collections = loadCollections()
+  const collIndex = collections.findIndex(c => c.id === collectionId)
+  if (collIndex >= 0) {
+    const coll = collections[collIndex]
+    collections[collIndex] = {
+      ...coll,
+      compositionIds: coll.compositionIds.filter(id => id !== compositionId),
+      updatedAt: Date.now()
+    }
+    saveCollections(collections)
+  }
+}
+
+export const pinComposition = (compositionId: string): void => {
+  const compositions = loadCompositions()
+  const index = compositions.findIndex(c => c.id === compositionId)
+  if (index >= 0) {
+    compositions[index] = {
+      ...compositions[index],
+      isPinned: true,
+      pinnedAt: Date.now(),
+      updatedAt: Date.now()
+    }
+    saveCompositions(compositions)
+  }
+}
+
+export const unpinComposition = (compositionId: string): void => {
+  const compositions = loadCompositions()
+  const index = compositions.findIndex(c => c.id === compositionId)
+  if (index >= 0) {
+    const { isPinned, pinnedAt, ...rest } = compositions[index]
+    compositions[index] = {
+      ...rest,
+      updatedAt: Date.now()
+    }
+    saveCompositions(compositions)
+  }
+}
+
+export const togglePinComposition = (compositionId: string): boolean => {
+  const compositions = loadCompositions()
+  const index = compositions.findIndex(c => c.id === compositionId)
+  if (index >= 0) {
+    const comp = compositions[index]
+    const newPinned = !comp.isPinned
+    if (newPinned) {
+      compositions[index] = {
+        ...comp,
+        isPinned: true,
+        pinnedAt: Date.now(),
+        updatedAt: Date.now()
+      }
+    } else {
+      const { isPinned, pinnedAt, ...rest } = comp
+      compositions[index] = {
+        ...rest,
+        updatedAt: Date.now()
+      }
+    }
+    saveCompositions(compositions)
+    return newPinned
+  }
+  return false
 }
