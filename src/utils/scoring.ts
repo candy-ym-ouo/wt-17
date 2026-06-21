@@ -1,4 +1,4 @@
-import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity } from '@/types'
+import type { Phrase, ScoreBreakdown, Chapter, ScoreWeights, DiagnosticReport, ScoreLoss, ThemeDeviation, WordClassImbalance, RevisionStep, CategoryBalance, PhraseCategory, PhraseRarity, Theme } from '@/types'
 import { rarityScoreBonus } from '@/data/phrases'
 
 const DEFAULT_WEIGHTS: ScoreWeights = {
@@ -8,8 +8,17 @@ const DEFAULT_WEIGHTS: ScoreWeights = {
   themeMatch: 0.25
 }
 
-export const resolveWeights = (boosts: Record<string, number>): ScoreWeights => {
+export const resolveWeights = (boosts: Record<string, number>, themeWeights?: Partial<ScoreWeights>): ScoreWeights => {
   const w = { ...DEFAULT_WEIGHTS }
+  
+  if (themeWeights) {
+    Object.entries(themeWeights).forEach(([dim, val]) => {
+      if (dim in w && typeof val === 'number') {
+        (w as any)[dim] = val
+      }
+    })
+  }
+  
   for (const [dim, boost] of Object.entries(boosts)) {
     if (dim in w) {
       (w as any)[dim] += boost
@@ -50,7 +59,7 @@ const getCategoryRelation = (c1: string, c2: string): number => {
 
 const characterCounts = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
 
-export const calculateScore = (phrases: Phrase[], chapter: Chapter, weightBoosts?: Record<string, number>): ScoreBreakdown => {
+export const calculateScore = (phrases: Phrase[], chapter: Chapter, weightBoosts?: Record<string, number>, theme?: Theme): ScoreBreakdown => {
   if (phrases.length === 0) {
     return { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 }
   }
@@ -58,14 +67,17 @@ export const calculateScore = (phrases: Phrase[], chapter: Chapter, weightBoosts
   const coherence = calcCoherence(phrases)
   const imagery = calcImagery(phrases)
   const rhythm = calcRhythm(phrases)
-  const themeMatch = calcThemeMatch(phrases, chapter)
+  const themeMatch = theme && theme.wordPool.keywords.length > 0 
+    ? calcThemeMatchWithTheme(phrases, theme) 
+    : calcThemeMatch(phrases, chapter)
   
   const rarityBonus = calcRarityBonus(phrases)
+  const themeBonus = theme?.scoring.themeMatchBonus || 0
   
-  const weights = resolveWeights(weightBoosts || {})
+  const weights = resolveWeights(weightBoosts || {}, theme?.scoring.scoreWeights)
   const countBonus = Math.min(phrases.length / chapter.targetPhraseCount, 1)
   const baseScore = (coherence * weights.coherence + imagery * weights.imagery + rhythm * weights.rhythm + themeMatch * weights.themeMatch) * 100
-  const total = Math.round(baseScore * countBonus * (1 + rarityBonus))
+  const total = Math.round(baseScore * countBonus * (1 + rarityBonus + themeBonus))
 
   return {
     coherence: Math.round(coherence * 100),
@@ -142,6 +154,33 @@ const rarityWeight: Record<PhraseRarity, number> = {
   legendary: 2
 }
 
+const calcThemeMatchWithTheme = (phrases: Phrase[], theme: Theme): number => {
+  const keywords = theme.wordPool.keywords || []
+  if (keywords.length === 0) return 0.85
+  
+  let matchWeight = 0
+  let totalWeight = 0
+  
+  phrases.forEach(p => {
+    const rWeight = rarityWeight[p.rarity] || 1
+    totalWeight += rWeight
+    if (keywords.includes(p.text)) {
+      matchWeight += rWeight
+    }
+  })
+  
+  const directMatch = totalWeight > 0 ? matchWeight / totalWeight : 0
+  
+  const preferredCategories = theme.scoring.preferredCategories || []
+  const categoryMatch = preferredCategories.length > 0
+    ? phrases.filter(p => preferredCategories.includes(p.category)).length / phrases.length
+    : phrases.filter(p => 
+        p.category === 'scene' || p.category === 'imagery' || p.category === 'emotion'
+      ).length / phrases.length
+  
+  return Math.min(directMatch * 0.65 + categoryMatch * 0.35, 1)
+}
+
 const calcThemeMatch = (phrases: Phrase[], chapter: Chapter): number => {
   if (chapter.theme === '自由') return 0.85
   const keywords = themeKeywords[chapter.theme] || []
@@ -175,13 +214,33 @@ export const getScoreGrade = (total: number): { grade: string; color: string; co
   return { grade: '习作', color: '#6b6858', comment: '诗无达诂，意蕴由心。' }
 }
 
-export const generatePoemTitle = (phrases: Phrase[]): string => {
+export const generatePoemTitle = (phrases: Phrase[], theme?: Theme): string => {
   if (phrases.length === 0) return '无题'
+  
+  const preferCategories = theme?.titlePattern.preferCategories || ['scene', 'imagery', 'emotion']
+  const connector = theme?.titlePattern.connector || '·'
+  const maxWords = theme?.titlePattern.maxWords || 2
+  const template = theme?.titlePattern.template
+  
   const keyPhrases = phrases
-    .filter(p => p.category === 'scene' || p.category === 'imagery' || p.category === 'emotion')
-    .slice(0, 2)
-  if (keyPhrases.length === 0) return phrases[0].text
-  return keyPhrases.map(p => p.text).join('·')
+    .filter(p => preferCategories.includes(p.category))
+    .slice(0, maxWords)
+  
+  if (keyPhrases.length === 0) {
+    return phrases[0].text
+  }
+  
+  const words = keyPhrases.map(p => p.text)
+  
+  if (template && words.length >= 2) {
+    let result = template
+    words.forEach((word, index) => {
+      result = result.replace(new RegExp(`\\{word${index + 1}\\}`, 'g'), word)
+    })
+    return result
+  }
+  
+  return words.join(connector)
 }
 
 const DIMENSION_LABELS: Record<string, string> = {

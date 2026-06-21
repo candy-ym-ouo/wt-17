@@ -1,4 +1,4 @@
-import type { Phrase, PhraseCategory, PhraseRarity, PhraseSource } from '@/types'
+import type { Phrase, PhraseCategory, PhraseRarity, PhraseSource, Theme } from '@/types'
 
 let phraseIdCounter = 0
 const pid = () => `p_${Date.now()}_${++phraseIdCounter}`
@@ -306,4 +306,72 @@ export const categoryColors: Record<PhraseCategory, string> = {
   time: '#c9a86c',
   action: '#6b8e6b',
   imagery: '#7a5b8c'
+}
+
+export const generateThemePhrases = (
+  theme: Theme,
+  totalCount: number,
+  chapterId: string,
+  chapterTitle: string
+): Phrase[] => {
+  const allPhrases = getAllPhrases()
+  
+  let filteredPhrases = [...allPhrases]
+  
+  if (theme.wordPool.excludedPhrases && theme.wordPool.excludedPhrases.length > 0) {
+    const excludedSet = new Set(theme.wordPool.excludedPhrases)
+    filteredPhrases = filteredPhrases.filter(p => !excludedSet.has(p.text))
+  }
+  
+  const config: DropConfig = {
+    totalCount,
+    themeKeywords: theme.wordPool.keywords,
+    themeMatchBoost: 2.5,
+    categoryWeights: theme.wordPool.categoryWeights,
+    rarityBoost: theme.wordPool.rarityBoost
+  }
+  
+  const dropped = dropPhrases(filteredPhrases, config)
+  const source = createChapterSource(chapterId, chapterTitle)
+  
+  return dropped.map(phrase => ({
+    ...phrase,
+    id: pid(),
+    source
+  }))
+}
+
+export const getThemeEnhancedPhrases = (
+  basePhrases: Phrase[],
+  theme: Theme
+): Phrase[] => {
+  const { keywords = [], categoryWeights = {}, rarityBoost = {} } = theme.wordPool
+  
+  if (keywords.length === 0 && Object.keys(categoryWeights).length === 0 && Object.keys(rarityBoost).length === 0) {
+    return basePhrases
+  }
+  
+  const weightedPhrases = basePhrases.map(phrase => {
+    let score = 0
+    
+    if (keywords.includes(phrase.text)) {
+      score += 3
+    }
+    
+    const catWeight = categoryWeights[phrase.category]
+    if (catWeight !== undefined) {
+      score += catWeight
+    }
+    
+    const rareBoost = rarityBoost[phrase.rarity]
+    if (rareBoost !== undefined) {
+      score += rareBoost
+    }
+    
+    return { phrase, score }
+  })
+  
+  const sorted = weightedPhrases.sort((a, b) => b.score - a.score)
+  
+  return sorted.map(item => item.phrase)
 }

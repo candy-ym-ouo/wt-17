@@ -264,3 +264,53 @@ export interface SnapshotStorage {
   snapshots: HistorySnapshot[]
   currentSnapshotId: string | null
 }
+
+export type ThemeDecorationType = 'stars' | 'flowers' | 'waves' | 'mountains' | 'clouds' | 'fireflies' | 'leaves' | 'snow'
+
+export interface ThemeBackground {
+  gradient: string
+  particleColor: string
+  gridOpacity: number
+  watermarkText?: string
+  watermarkOpacity?: number
+}
+
+export interface ThemeWordPool {
+  keywords: string[]
+  categoryWeights: Partial<Record<PhraseCategory, number>>
+  excludedPhrases?: string[]
+  rarityBoost?: Partial<Record<PhraseRarity, number>>
+}
+
+export interface ThemeScoring {
+  scoreWeights: Partial<ScoreWeights>
+  themeMatchBonus: number
+  preferredCategories: PhraseCategory[]
+}
+
+export interface ThemeTitlePattern {
+  connector: string
+  preferCategories: PhraseCategory[]
+  maxWords: number
+  template?: string
+}
+
+export interface Theme {
+  id: string
+  name: string
+  description: string
+  icon: string
+  accentColor: string
+  background: ThemeBackground
+  decoration: ThemeDecorationType
+  wordPool: ThemeWordPool
+  scoring: ThemeScoring
+  titlePattern: ThemeTitlePattern
+  isCustom?: boolean
+  createdAt?: number
+}
+
+export interface ThemeState {
+  currentThemeId: string
+  customThemes: Theme[]
+}

@@ -1,4 +1,5 @@
-import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase } from '@/types'
+import type { Composition, GameState, QuestState, Phrase, Collection, PhraseCollectionState, CanvasPhrase, Theme, ThemeState } from '@/types'
+import { DEFAULT_THEME_ID } from '@/data/themes'
 
 const STORAGE_KEYS = {
   COMPOSITIONS: 'poem_slices_compositions',
@@ -7,6 +8,7 @@ const STORAGE_KEYS = {
   EDITING_COMPOSITION: 'poem_slices_editing_composition',
   COLLECTIONS: 'poem_slices_collections',
   DRAFT: 'poem_slices_draft',
+  THEME_STATE: 'poem_slices_theme_state',
 }
 
 const DEFAULT_QUEST_STATE: QuestState = {
@@ -529,4 +531,61 @@ export const createDraftFromState = (
     savedAt: Date.now(),
     source
   }
+}
+
+const DEFAULT_THEME_STATE: ThemeState = {
+  currentThemeId: DEFAULT_THEME_ID,
+  customThemes: []
+}
+
+export const saveThemeState = (state: ThemeState): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.THEME_STATE, JSON.stringify(state))
+  } catch (e) {
+    console.error('Failed to save theme state:', e)
+  }
+}
+
+export const loadThemeState = (): ThemeState => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.THEME_STATE)
+    return data ? { ...DEFAULT_THEME_STATE, ...JSON.parse(data) } : { ...DEFAULT_THEME_STATE }
+  } catch (e) {
+    console.error('Failed to load theme state:', e)
+    return { ...DEFAULT_THEME_STATE }
+  }
+}
+
+export const setCurrentTheme = (themeId: string): void => {
+  const state = loadThemeState()
+  state.currentThemeId = themeId
+  saveThemeState(state)
+}
+
+export const getCurrentThemeId = (): string => {
+  return loadThemeState().currentThemeId
+}
+
+export const saveCustomTheme = (theme: Theme): void => {
+  const state = loadThemeState()
+  const existingIndex = state.customThemes.findIndex(t => t.id === theme.id)
+  if (existingIndex >= 0) {
+    state.customThemes[existingIndex] = theme
+  } else {
+    state.customThemes.push(theme)
+  }
+  saveThemeState(state)
+}
+
+export const deleteCustomTheme = (themeId: string): void => {
+  const state = loadThemeState()
+  state.customThemes = state.customThemes.filter(t => t.id !== themeId)
+  if (state.currentThemeId === themeId) {
+    state.currentThemeId = DEFAULT_THEME_ID
+  }
+  saveThemeState(state)
+}
+
+export const getCustomThemes = (): Theme[] => {
+  return loadThemeState().customThemes
 }

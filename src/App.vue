@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme } from '@/types'
 import { chapters, getChapterById, chapterDropConfigs } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
-import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource } from '@/data/phrases'
+import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
 import { calculateScore, generatePoemTitle } from '@/utils/scoring'
+import { getThemeById, getDefaultTheme } from '@/data/themes'
+import { loadThemeState, getCurrentThemeId, setCurrentTheme, getCustomThemes } from '@/utils/storage'
 import {
   loadGameState, saveGameState, loadCompositions, saveComposition, deleteComposition,
   unlockChapter, isChapterUnlocked, getAllBestScores, getCompositionsByChapter,
@@ -37,10 +39,36 @@ import SaveDialog from '@/components/SaveDialog.vue'
 import SideQuestPanel from '@/components/SideQuestPanel.vue'
 import SnapshotPanel from '@/components/SnapshotPanel.vue'
 import PhraseCollection from '@/components/PhraseCollection.vue'
+import ThemePanel from '@/components/ThemePanel.vue'
 
 const gameState = ref<GameState>(loadGameState())
-
 const currentChapterId = ref(gameState.value.currentChapterId)
+const themeState = ref(loadThemeState())
+const showThemePanel = ref(false)
+const currentThemeId = ref(getCurrentThemeId())
+
+const isFreeRealm = computed(() => currentChapterId.value === 'ch5')
+
+const currentTheme = computed((): Theme => {
+  if (!isFreeRealm.value) {
+    return getDefaultTheme()
+  }
+  return getThemeById(currentThemeId.value, getCustomThemes()) || getDefaultTheme()
+})
+
+const effectiveBackground = computed(() => {
+  if (isFreeRealm.value) {
+    return currentTheme.value.background.gradient
+  }
+  return currentChapter.value?.backgroundGradient || '#0f0f1a'
+})
+
+const effectiveAccentColor = computed(() => {
+  if (isFreeRealm.value) {
+    return currentTheme.value.accentColor
+  }
+  return currentChapter.value?.accentColor || '#c9a86c'
+})
 const boardPhrases = ref<CanvasPhrase[]>([])
 const compositions = ref<Composition[]>(loadCompositions())
 const collections = ref<Collection[]>(loadCollections())
@@ -344,7 +372,8 @@ const score = computed<ScoreBreakdown>((): ScoreBreakdown => {
     rarity: p.rarity,
     source: p.source
   }))
-  return calculateScore(phrases, currentChapter.value, questState.value.activeWeightBoosts)
+  const theme = isFreeRealm.value ? currentTheme.value : undefined
+  return calculateScore(phrases, currentChapter.value, questState.value.activeWeightBoosts, theme)
 })
 
 const poemTitle = computed(() => {
@@ -359,7 +388,8 @@ const poemTitle = computed(() => {
     rarity: p.rarity,
     source: p.source
   }))
-  return generatePoemTitle(phrases)
+  const theme = isFreeRealm.value ? currentTheme.value : undefined
+  return generatePoemTitle(phrases, theme)
 })
 
 const unlockedChapterIds = computed(() => {
@@ -421,8 +451,21 @@ const enhancedChapterPhrases = computed((): Phrase[] => {
   if (!ch) return []
   const droppedPhrases = getOrGenerateChapterDrops(currentChapterId.value)
   const rewardPhrasesForChapter = questState.value.chapterRewardPhrases[currentChapterId.value] || []
-  return [...droppedPhrases, ...rewardPhrasesForChapter]
+  const allPhrases = [...droppedPhrases, ...rewardPhrasesForChapter]
+  
+  if (isFreeRealm.value) {
+    return getThemeEnhancedPhrases(allPhrases, currentTheme.value)
+  }
+  
+  return allPhrases
 })
+
+const handleSelectTheme = (themeId: string) => {
+  currentThemeId.value = themeId
+  setCurrentTheme(themeId)
+  themeState.value = loadThemeState()
+  chapterDropCache.value = {}
+}
 
 const collectedPhraseTexts = computed((): Set<string> => {
   const collected = questState.value.phraseCollection.collectedPhrases
@@ -943,7 +986,7 @@ watch(boardPhrases, () => {
 </script>
 
 <template>
-  <div class="app-container" :style="{ background: currentChapter?.backgroundGradient || '#0f0f1a' }">
+  <div class="app-container" :style="{ background: effectiveBackground }">
     <TopHeader
       :chapter="currentChapter"
       :musicEnabled="gameState.musicEnabled"
@@ -954,12 +997,15 @@ watch(boardPhrases, () => {
       :snapshotCount="snapshotStorage.snapshots.length"
       :isEditingComposition="isEditingComposition"
       :editingTitle="editingOriginalTitle"
+      :isFreeRealm="isFreeRealm"
+      :currentTheme="currentTheme"
       @toggleMusic="handleToggleMusic"
       @changeVolume="handleChangeVolume"
       @openChapters="showChapters = true"
       @openPortfolio="showPortfolio = true"
       @openQuests="showQuestPanel = true"
       @openSnapshots="showSnapshotPanel = true"
+      @openThemes="showThemePanel = true"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -980,7 +1026,8 @@ watch(boardPhrases, () => {
             ref="canvasBoardRef"
             :phrases="enhancedChapterPhrases"
             :boardPhrases="boardPhrases"
-            :accentColor="currentChapter?.accentColor || '#c9a86c'"
+            :accentColor="effectiveAccentColor"
+            :theme="isFreeRealm ? currentTheme : undefined"
             @update:boardPhrases="handleBoardPhrasesUpdate"
             @remove="handleRemovePhrase"
           />
@@ -1105,6 +1152,14 @@ watch(boardPhrases, () => {
       v-if="showCollection"
       :collection="questState.phraseCollection"
       @close="handleCloseCollection"
+    />
+    
+    <ThemePanel
+      v-if="showThemePanel"
+      :visible="showThemePanel"
+      :currentThemeId="currentThemeId"
+      @close="showThemePanel = false"
+      @select="handleSelectTheme"
     />
     
     <div v-if="showDraftRestoreDialog && pendingDraft" class="draft-restore-overlay" @click.self="discardDraft">

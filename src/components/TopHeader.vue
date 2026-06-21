@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Chapter } from '@/types'
+import type { Chapter, Theme } from '@/types'
 
 interface Props {
   chapter: Chapter | null
@@ -11,6 +11,8 @@ interface Props {
   snapshotCount: number
   isEditingComposition: boolean
   editingTitle: string
+  isFreeRealm: boolean
+  currentTheme: Theme
 }
 
 defineProps<Props>()
@@ -21,6 +23,7 @@ const emit = defineEmits<{
   (e: 'openPortfolio'): void
   (e: 'openQuests'): void
   (e: 'openSnapshots'): void
+  (e: 'openThemes'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save'): void
@@ -38,6 +41,16 @@ const emit = defineEmits<{
       <button class="chapter-btn" @click="emit('openChapters')">
         <span class="chapter-name">{{ chapter?.title || '选择章节' }}</span>
         <span class="chapter-arrow">▾</span>
+      </button>
+      <button 
+        v-if="isFreeRealm" 
+        class="theme-btn" 
+        @click="emit('openThemes')"
+        :style="{ borderColor: currentTheme.accentColor }"
+      >
+        <span class="theme-icon">{{ currentTheme.icon }}</span>
+        <span class="theme-name">{{ currentTheme.name }}</span>
+        <span class="theme-arrow">▾</span>
       </button>
       <div v-if="isEditingComposition" class="editing-indicator">
         <span class="editing-pulse"></span>
@@ -174,6 +187,39 @@ const emit = defineEmits<{
 }
 
 .chapter-arrow {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.theme-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid;
+  border-radius: 20px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.theme-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.theme-icon {
+  font-size: 16px;
+}
+
+.theme-name {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  color: var(--text-primary);
+  letter-spacing: 1px;
+}
+
+.theme-arrow {
   font-size: 10px;
   color: var(--text-muted);
 }
@@ -401,6 +447,12 @@ const emit = defineEmits<{
 @media (max-width: 640px) {
   .chapter-name {
     display: none;
+  }
+  .theme-name {
+    display: none;
+  }
+  .theme-btn {
+    padding: 6px 10px;
   }
   .save-text {
     display: none;

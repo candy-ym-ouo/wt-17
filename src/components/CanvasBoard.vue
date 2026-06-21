@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
-import type { Phrase, CanvasPhrase } from '@/types'
+import type { Phrase, CanvasPhrase, Theme, ThemeDecorationType } from '@/types'
 import { categoryColors } from '@/data/phrases'
 import { musicPlayer } from '@/utils/music'
 
@@ -8,6 +8,7 @@ interface Props {
   phrases: Phrase[]
   boardPhrases: CanvasPhrase[]
   accentColor: string
+  theme?: Theme
 }
 
 const props = defineProps<Props>()
@@ -23,6 +24,13 @@ const canvasSize = ref({ width: 800, height: 600 })
 const hoveredPhraseId = ref<string | null>(null)
 let animationId: number | null = null
 let particles: { x: number; y: number; vx: number; vy: number; life: number; color: string }[] = []
+let decorationParticles: {
+  x: number; y: number; vx: number; vy: number;
+  size: number; rotation: number; rotationSpeed: number;
+  life: number; maxLife: number; opacity: number;
+  type: ThemeDecorationType; color: string;
+}[] = []
+let lastDecorationSpawn = 0
 
 const placedIds = computed(() => new Set(props.boardPhrases.map(p => p.id)))
 
@@ -58,11 +66,16 @@ const initCanvas = () => {
 
 const drawBackground = (ctx: CanvasRenderingContext2D) => {
   const { width, height } = canvasSize.value
+  const theme = props.theme
+  const gridOpacity = theme?.background.gridOpacity ?? 0.04
+  const watermarkText = theme?.background.watermarkText ?? '诗'
+  const watermarkOpacity = theme?.background.watermarkOpacity ?? 0.03
+  const accentColor = theme?.background.particleColor ?? props.accentColor
   
   ctx.fillStyle = 'rgba(15, 15, 26, 0.02)'
   ctx.fillRect(0, 0, width, height)
   
-  ctx.strokeStyle = 'rgba(201, 168, 108, 0.04)'
+  ctx.strokeStyle = `rgba(201, 168, 108, ${gridOpacity})`
   ctx.lineWidth = 1
   const gridSize = 40
   for (let x = 0; x < width; x += gridSize) {
@@ -79,13 +92,209 @@ const drawBackground = (ctx: CanvasRenderingContext2D) => {
   }
 
   ctx.save()
-  ctx.globalAlpha = 0.03
+  ctx.globalAlpha = watermarkOpacity
   ctx.font = `bold 180px ${getComputedStyle(document.documentElement).getPropertyValue('--font-brush')}`
-  ctx.fillStyle = props.accentColor
+  ctx.fillStyle = accentColor
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText('诗', width / 2, height / 2)
+  ctx.fillText(watermarkText, width / 2, height / 2)
   ctx.restore()
+}
+
+const spawnDecorationParticle = () => {
+  const theme = props.theme
+  if (!theme) return
+  
+  const { width, height } = canvasSize.value
+  const type = theme.decoration
+  const color = theme.background.particleColor
+  
+  const particle = {
+    x: Math.random() * width,
+    y: -20,
+    vx: (Math.random() - 0.5) * 0.5,
+    vy: 0.3 + Math.random() * 0.5,
+    size: 3 + Math.random() * 5,
+    rotation: Math.random() * Math.PI * 2,
+    rotationSpeed: (Math.random() - 0.5) * 0.05,
+    life: 1,
+    maxLife: 1,
+    opacity: 0.3 + Math.random() * 0.4,
+    type,
+    color
+  }
+  
+  decorationParticles.push(particle)
+}
+
+const updateDecorationParticles = (deltaTime: number) => {
+  const now = Date.now()
+  if (now - lastDecorationSpawn > 800) {
+    spawnDecorationParticle()
+    lastDecorationSpawn = now
+  }
+  
+  decorationParticles = decorationParticles.filter(p => {
+    p.x += p.vx
+    p.y += p.vy
+    p.rotation += p.rotationSpeed
+    p.life -= 0.002
+    
+    if (p.type === 'waves') {
+      p.y += Math.sin(p.x * 0.02 + now * 0.001) * 0.3
+    } else if (p.type === 'clouds') {
+      p.vx = 0.2 + Math.sin(now * 0.001) * 0.1
+    } else if (p.type === 'fireflies') {
+      p.vx += (Math.random() - 0.5) * 0.1
+      p.vy += (Math.random() - 0.5) * 0.1
+      p.opacity = 0.2 + Math.sin(now * 0.003 + p.x) * 0.3
+    }
+    
+    return p.life > 0 && p.y < canvasSize.value.height + 50
+  })
+}
+
+const drawDecorationParticles = (ctx: CanvasRenderingContext2D) => {
+  if (!props.theme) return
+  
+  decorationParticles.forEach(p => {
+    ctx.save()
+    ctx.translate(p.x, p.y)
+    ctx.rotate(p.rotation)
+    ctx.globalAlpha = p.opacity * p.life
+    const color = p.color
+    ctx.fillStyle = color
+    
+    switch (p.type) {
+      case 'stars':
+        drawStar(ctx, p.size)
+        break
+      case 'flowers':
+        drawFlower(ctx, p.size)
+        break
+      case 'waves':
+        drawWave(ctx, p.size)
+        break
+      case 'mountains':
+        drawMountain(ctx, p.size)
+        break
+      case 'clouds':
+        drawCloud(ctx, p.size)
+        break
+      case 'fireflies':
+        drawFirefly(ctx, p.size, color)
+        break
+      case 'leaves':
+        drawLeaf(ctx, p.size)
+        break
+      case 'snow':
+        drawSnowflake(ctx, p.size)
+        break
+      default:
+        ctx.beginPath()
+        ctx.arc(0, 0, p.size, 0, Math.PI * 2)
+        ctx.fill()
+    }
+    
+    ctx.restore()
+  })
+}
+
+const drawStar = (ctx: CanvasRenderingContext2D, size: number) => {
+  ctx.beginPath()
+  for (let i = 0; i < 5; i++) {
+    const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2
+    const x = Math.cos(angle) * size
+    const y = Math.sin(angle) * size
+    if (i === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+  ctx.closePath()
+  ctx.fill()
+}
+
+const drawFlower = (ctx: CanvasRenderingContext2D, size: number) => {
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath()
+    const angle = (i * 2 * Math.PI) / 5
+    const x = Math.cos(angle) * size * 0.6
+    const y = Math.sin(angle) * size * 0.6
+    ctx.arc(x, y, size * 0.5, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.beginPath()
+  ctx.arc(0, 0, size * 0.3, 0, Math.PI * 2)
+  ctx.fillStyle = '#ffeb3b'
+  ctx.fill()
+}
+
+const drawWave = (ctx: CanvasRenderingContext2D, size: number) => {
+  ctx.beginPath()
+  ctx.moveTo(-size, 0)
+  ctx.quadraticCurveTo(-size / 2, -size, 0, 0)
+  ctx.quadraticCurveTo(size / 2, size, size, 0)
+  ctx.lineWidth = 2
+  ctx.strokeStyle = ctx.fillStyle
+  ctx.stroke()
+}
+
+const drawMountain = (ctx: CanvasRenderingContext2D, size: number) => {
+  ctx.beginPath()
+  ctx.moveTo(-size, size * 0.6)
+  ctx.lineTo(0, -size * 0.6)
+  ctx.lineTo(size, size * 0.6)
+  ctx.closePath()
+  ctx.fill()
+}
+
+const drawCloud = (ctx: CanvasRenderingContext2D, size: number) => {
+  ctx.beginPath()
+  ctx.arc(-size * 0.5, 0, size * 0.4, 0, Math.PI * 2)
+  ctx.arc(0, -size * 0.2, size * 0.5, 0, Math.PI * 2)
+  ctx.arc(size * 0.5, 0, size * 0.4, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+const drawFirefly = (ctx: CanvasRenderingContext2D, size: number, color: string) => {
+  ctx.beginPath()
+  ctx.arc(0, 0, size, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.shadowColor = color
+  ctx.shadowBlur = size * 3
+  ctx.fill()
+  ctx.shadowBlur = 0
+}
+
+const drawLeaf = (ctx: CanvasRenderingContext2D, size: number) => {
+  ctx.beginPath()
+  ctx.ellipse(0, 0, size, size * 0.6, Math.PI / 4, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(-size * 0.6, -size * 0.4)
+  ctx.lineTo(size * 0.6, size * 0.4)
+  ctx.stroke()
+}
+
+const drawSnowflake = (ctx: CanvasRenderingContext2D, size: number) => {
+  ctx.beginPath()
+  for (let i = 0; i < 6; i++) {
+    const angle = (i * Math.PI) / 3
+    ctx.moveTo(0, 0)
+    ctx.lineTo(Math.cos(angle) * size, Math.sin(angle) * size)
+    const midX = Math.cos(angle) * size * 0.6
+    const midY = Math.sin(angle) * size * 0.6
+    const branchAngle1 = angle + Math.PI / 6
+    const branchAngle2 = angle - Math.PI / 6
+    ctx.moveTo(midX, midY)
+    ctx.lineTo(midX + Math.cos(branchAngle1) * size * 0.3, midY + Math.sin(branchAngle1) * size * 0.3)
+    ctx.moveTo(midX, midY)
+    ctx.lineTo(midX + Math.cos(branchAngle2) * size * 0.3, midY + Math.sin(branchAngle2) * size * 0.3)
+  }
+  ctx.lineWidth = 2
+  ctx.strokeStyle = ctx.fillStyle
+  ctx.stroke()
 }
 
 const drawPhrase = (ctx: CanvasRenderingContext2D, phrase: CanvasPhrase, time: number) => {
@@ -202,6 +411,11 @@ const render = () => {
   
   ctx.clearRect(0, 0, canvasSize.value.width, canvasSize.value.height)
   drawBackground(ctx)
+  
+  const deltaTime = 16
+  updateDecorationParticles(deltaTime)
+  drawDecorationParticles(ctx)
+  
   drawParticles(ctx)
   
   const time = performance.now()
