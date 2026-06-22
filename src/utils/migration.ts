@@ -8,8 +8,6 @@ import type {
   Phrase,
   PhraseSource,
   CanvasPhrase,
-  AchievementProgress,
-  TravelMapState,
 } from '@/types'
 import type { DraftState, EditingCompositionState } from '@/utils/storage'
 import { DEFAULT_QUEST_STATE, DEFAULT_STATE } from '@/utils/storage'
@@ -28,10 +26,11 @@ export type StorageDataType =
   | 'editingComposition'
   | 'userActivity'
   | 'gatheringState'
-  | 'reviewState'
   | 'achievementProgress'
   | 'travelMapState'
   | 'impromptuTopicState'
+  | 'reviewState'
+  | 'poetrySocietyState'
 
 export interface VersionedData<T> {
   _schemaVersion: number
@@ -392,40 +391,11 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
     },
   ],
   gatheringState: [],
-  reviewState: [],
-  achievementProgress: [
-    {
-      targetVersion: 1,
-      description: '回填缺失的成就进度字段',
-      migrate: (data: AchievementProgress[]) => {
-        return data.map(p => ({
-          achievementId: p.achievementId,
-          unlocked: p.unlocked ?? false,
-          completed: p.completed ?? false,
-          claimed: p.claimed ?? false,
-          unlockedAt: p.unlockedAt ?? undefined,
-          completedAt: p.completedAt ?? undefined,
-        }))
-      },
-    },
-  ],
-  travelMapState: [
-    {
-      targetVersion: 1,
-      description: '回填缺失的游历地图状态字段',
-      migrate: (data: TravelMapState) => {
-        return {
-          currentNodeId: data.currentNodeId ?? '',
-          visitedNodeIds: data.visitedNodeIds ?? [],
-          completedEventIds: data.completedEventIds ?? [],
-          achievements: data.achievements ?? [],
-          unlockedChapterIds: data.unlockedChapterIds ?? [],
-          mapExplorationPercent: data.mapExplorationPercent ?? 0,
-        }
-      },
-    },
-  ],
+  achievementProgress: [],
+  travelMapState: [],
   impromptuTopicState: [],
+  reviewState: [],
+  poetrySocietyState: [],
 }
 
 function fillSourceGaps(source: PhraseSource | undefined | null, chapterId: string): PhraseSource {
@@ -656,10 +626,11 @@ export function getMigrationStatus(): Record<StorageDataType, { current: number;
     editingComposition: 'poem_slices_editing_composition',
     userActivity: 'poem_slices_user_activity',
     gatheringState: 'poem_slices_gathering_state',
-    reviewState: 'poem_slices_mentor_reviews',
     achievementProgress: 'poem_slices_achievement_progress',
     travelMapState: 'poem_slices_travel_map_state',
-    impromptuTopicState: 'poem_slices_impromptu_topic_state',
+    impromptuTopicState: 'poem_slices_impromptu_state',
+    reviewState: 'poem_slices_review_state',
+    poetrySocietyState: 'poem_slices_poetry_society',
   }
 
   const types: StorageDataType[] = [
@@ -672,8 +643,12 @@ export function getMigrationStatus(): Record<StorageDataType, { current: number;
     'draft',
     'editingComposition',
     'userActivity',
+    'gatheringState',
     'achievementProgress',
     'travelMapState',
+    'impromptuTopicState',
+    'reviewState',
+    'poetrySocietyState',
   ]
 
   types.forEach(type => {

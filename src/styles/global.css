@@ -297,3 +297,60 @@ button:disabled {
   animation: progressFill 1s ease-out forwards;
 }
 
+@keyframes societyReveal {
+  0% { opacity: 0; transform: scale(0.9) translateY(20px); filter: blur(4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+}
+
+@keyframes rankUpgrade {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.15); filter: brightness(1.3); }
+  60% { transform: scale(0.95); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+@keyframes reputationGain {
+  0% { opacity: 0; transform: translateY(10px) scale(0.8); }
+  50% { opacity: 1; transform: translateY(-5px) scale(1.1); }
+  100% { opacity: 0; transform: translateY(-20px) scale(0.9); }
+}
+
+@keyframes rareChapterUnlock {
+  0% { transform: scale(0.8) rotateY(90deg); opacity: 0; filter: grayscale(1) blur(4px); }
+  40% { transform: scale(1.05) rotateY(-5deg); filter: grayscale(0.3) blur(1px); }
+  70% { transform: scale(0.98) rotateY(2deg); filter: grayscale(0) blur(0); }
+  100% { transform: scale(1) rotateY(0deg); opacity: 1; }
+}
+
+@keyframes exhibitionShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes submissionFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.animate-society-reveal {
+  animation: societyReveal 0.5s ease-out forwards;
+}
+
+.animate-rank-upgrade {
+  animation: rankUpgrade 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-rare-unlock {
+  animation: rareChapterUnlock 0.8s ease-out forwards;
+}
+
+.animate-exhibition-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(201, 168, 108, 0.08), transparent);
+  background-size: 200% 100%;
+  animation: exhibitionShimmer 3s ease-in-out infinite;
+}
+
+.animate-submission-float {
+  animation: submissionFloat 4s ease-in-out infinite;
+}
+

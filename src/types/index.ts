@@ -984,3 +984,132 @@ export interface ImpromptuTopicState {
   claimedRewards: Record<string, string[]>
   totalCompleted: number
 }
+
+export type SubmissionStatus = 'pending' | 'accepted' | 'rejected' | 'showcased'
+export type ReviewVerdict = 'accept' | 'reject' | 'showcase'
+export type ReputationRank = '童生' | '秀才' | '举人' | '进士' | '翰林' | '大学士'
+
+export interface SocietySubmission {
+  id: string
+  compositionId: string
+  submittedAt: number
+  status: SubmissionStatus
+  reviewVerdict?: ReviewVerdict
+  reviewedAt?: number
+  reviewerName?: string
+  reviewComment?: string
+  reputationGained: number
+  exhibitionThemeId?: string
+}
+
+export interface ExhibitionTheme {
+  id: string
+  name: string
+  description: string
+  icon: string
+  accentColor: string
+  requiredKeywords: string[]
+  preferredCategories: PhraseCategory[]
+  minScore: number
+  maxSlots: number
+  bonusReputation: number
+  backgroundGradient: string
+}
+
+export interface ExhibitionEntry {
+  id: string
+  compositionId: string
+  themeId: string
+  exhibitedAt: number
+  visitorCount: number
+  reputationEarned: number
+  isFeatured: boolean
+}
+
+export interface ReputationMilestone {
+  rank: ReputationRank
+  minReputation: number
+  titleReward: string
+  unlockedFeatures: string[]
+  accentColor: string
+  icon: string
+}
+
+export interface RareChapter {
+  id: string
+  title: string
+  subtitle: string
+  description: string
+  theme: string
+  backgroundGradient: string
+  accentColor: string
+  phrases: Phrase[]
+  unlocked: boolean
+  targetPhraseCount: number
+  hint: string
+  requiredRank: ReputationRank
+  requiredReputation: number
+  unlockQuestId?: string
+  rarity: 'epic' | 'legendary'
+  qualifierWords?: string[]
+  forbiddenWords?: string[]
+  hiddenKeywords?: string[]
+  settlementRules?: SettlementRule[]
+}
+
+export interface SocietyReviewCriterion {
+  id: string
+  name: string
+  description: string
+  weight: number
+  icon: string
+}
+
+export interface SocietyReviewResult {
+  criterionId: string
+  score: number
+  comment: string
+}
+
+export interface PoetrySocietyState {
+  reputation: number
+  currentRank: ReputationRank
+  submissions: SocietySubmission[]
+  exhibitions: ExhibitionEntry[]
+  unlockedRareChapterIds: string[]
+  totalSubmissions: number
+  totalAccepted: number
+  totalShowcased: number
+  totalExhibitions: number
+  claimedMilestoneRewards: string[]
+  featuredCompositionId: string | null
+}
+
+export const REPUTATION_RANK_ORDER: ReputationRank[] = ['童生', '秀才', '举人', '进士', '翰林', '大学士']
+
+export const REPUTATION_RANK_MIN: Record<ReputationRank, number> = {
+  '童生': 0,
+  '秀才': 100,
+  '举人': 300,
+  '进士': 600,
+  '翰林': 1000,
+  '大学士': 1500
+}
+
+export const REPUTATION_RANK_COLORS: Record<ReputationRank, string> = {
+  '童生': '#a8a498',
+  '秀才': '#7a9ea8',
+  '举人': '#7ca97c',
+  '进士': '#c9a86c',
+  '翰林': '#9b59b6',
+  '大学士': '#ffd700'
+}
+
+export const REPUTATION_RANK_ICONS: Record<ReputationRank, string> = {
+  '童生': '📖',
+  '秀才': '📝',
+  '举人': '🎓',
+  '进士': '🏛️',
+  '翰林': '⭐',
+  '大学士': '🏮'
+}

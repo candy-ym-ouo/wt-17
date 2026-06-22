@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, CompositionVersion, MapNode, StoryEvent as StoryEventType, Achievement, AchievementProgress, TravelMapState, ImpromptuTopic, ImpromptuTopicState } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, PoetrySocietyState, ReputationRank } from '@/types'
 import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
@@ -16,12 +16,7 @@ import {
   pinComposition, unpinComposition,
   saveDraft, loadDraft, clearDraft, hasDraft, createDraftFromState,
   updateUserActivityOnVisit, determineUserEntryType, shouldShowWelcomeModal,
-  markWelcomeDismissed, markTutorialSeen, loadUserActivity,
-  loadAchievementProgress, saveAchievementProgress, unlockAchievement, completeAchievement,
-  claimAchievementReward, isAchievementUnlocked, isAchievementCompleted, isAchievementRewardClaimed,
-  loadTravelMapState, saveTravelMapState, visitMapNode, setCurrentMapNode,
-  completeStoryEvent, unlockChapterOnMap,
-  DEFAULT_ACHIEVEMENT_PROGRESS
+  markWelcomeDismissed, markTutorialSeen, loadUserActivity
 } from '@/utils/storage'
 import type { EditingCompositionState, DraftState, DraftSource } from '@/utils/storage'
 import type { Collection } from '@/types'
@@ -39,11 +34,6 @@ import { musicPlayer } from '@/utils/music'
 import { generateWelcomeContent } from '@/utils/onboarding'
 import { poetryGatherings, getGatheringById, getGatheringChapterById, getGatheringChapterPhrases } from '@/data/poetryGatherings'
 import { loadGatheringState, saveGatheringState, setGatheringActive, clearActiveGathering, saveChapterResult, evaluateBonusRules, claimGatheringReward, archiveGathering, isRewardClaimed as isGatheringRewardClaimed } from '@/utils/poetryGathering'
-import { getCipaiById, getCipaiScoringRuleByMode, cipaiTemplates } from '@/data/cipaiTemplates'
-import { sortPhrasesForCipai, getCipaiProgress, getNextLineHint, getCipaiScoreForPhrases } from '@/utils/cipaiWorkshop'
-import type { CipaiTemplate, CipaiScoringMode, CipaiScoreBreakdown } from '@/types'
-import { mapNodes, storyEvents, achievements, getStoryEventById, getMapNodeById, getAchievementById } from '@/data/travelMap'
-import { loadImpromptuState, saveImpromptuResult, determineImpromptuRewardTier, claimImpromptuReward, isImpromptuRewardClaimed, getImpromptuCompletedCount } from '@/utils/impromptuTopic'
 
 import TopHeader from '@/components/TopHeader.vue'
 import PhrasePool from '@/components/PhrasePool.vue'
@@ -61,14 +51,9 @@ import WelcomeModal from '@/components/WelcomeModal.vue'
 import RecommendationTip from '@/components/RecommendationTip.vue'
 import PoetryGatheringPanel from '@/components/PoetryGatheringPanel.vue'
 import GatheringSession from '@/components/GatheringSession.vue'
-import GatheringRankingPanel from '@/components/GatheringRankingPanel.vue'
-import CipaiWorkshop from '@/components/CipaiWorkshop.vue'
-import MentorReviewPanel from '@/components/MentorReviewPanel.vue'
-import VersionCompare from '@/components/VersionCompare.vue'
-import TravelMap from '@/components/TravelMap.vue'
-import StoryEvent from '@/components/StoryEvent.vue'
-import AchievementPanel from '@/components/AchievementPanel.vue'
-import ImpromptuTopicPanel from '@/components/ImpromptuTopicPanel.vue'
+import PoetrySocietyPanel from '@/components/PoetrySocietyPanel.vue'
+import { loadSocietyState, saveSocietyState, submitToSociety, reviewSubmission as reviewSocietySubmission, exhibitComposition as exhibitSocietyComposition, featureExhibition, checkRareChapterUnlocks, claimMilestoneReward as claimSocietyMilestoneReward } from '@/utils/poetrySociety'
+import { rareChapters, reputationMilestones } from '@/data/poetrySociety'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -133,30 +118,13 @@ const autoSaveInterval = 30000
 const gatheringState = ref<GatheringState>(loadGatheringState())
 const showGatheringPanel = ref(false)
 const showGatheringSession = ref(false)
-const showGatheringRanking = ref(false)
-const rankingGatheringId = ref<string | null>(null)
 const activeGatheringId = ref<string | null>(null)
 const activeGatheringChapterId = ref<string | null>(null)
 const gatheringBoardPhrases = ref<Phrase[]>([])
 const gatheringElapsedSeconds = ref(0)
-const showCipaiWorkshop = ref(false)
-const activeCipaiId = ref<string | null>(null)
-const cipaiScoringMode = ref<CipaiScoringMode>('standard')
 
-const showMentorReview = ref(false)
-const reviewingComposition = ref<Composition | null>(null)
-const showVersionCompare = ref(false)
-const compareVersions = ref<[CompositionVersion, CompositionVersion] | null>(null)
-
-const showTravelMap = ref(false)
-const showAchievementPanel = ref(false)
-const showStoryEvent = ref(false)
-const currentStoryEvent = ref<StoryEventType | null>(null)
-const travelMapState = ref<TravelMapState>(loadTravelMapState())
-const achievementProgress = ref<AchievementProgress[]>(loadAchievementProgress())
-
-const showImpromptuPanel = ref(false)
-const impromptuState = ref<ImpromptuTopicState>(loadImpromptuState())
+const showSocietyPanel = ref(false)
+const societyState = ref<PoetrySocietyState>(loadSocietyState())
 
 let autoSaveTimer: number | null = null
 
@@ -547,171 +515,6 @@ const handleThemesChanged = () => {
   currentThemeId.value = getCurrentThemeId()
 }
 
-const activeCipai = computed((): CipaiTemplate | null => {
-  if (!activeCipaiId.value) return null
-  return getCipaiById(activeCipaiId.value) || null
-})
-
-const currentCipaiRuleSet = computed(() => {
-  return getCipaiScoringRuleByMode(cipaiScoringMode.value) || null
-})
-
-const cipaiSortedPhrases = computed((): Phrase[] => {
-  if (!activeCipai.value || !currentCipaiRuleSet.value) {
-    return enhancedChapterPhrases.value
-  }
-  return sortPhrasesForCipai(
-    enhancedChapterPhrases.value,
-    activeCipai.value,
-    boardPhrases.value.map(p => ({
-      id: p.id, text: p.text, category: p.category,
-      position: p.position, rotation: p.rotation,
-      isPlaced: p.isPlaced, weight: p.weight,
-      rarity: p.rarity, source: p.source
-    })),
-    currentCipaiRuleSet.value
-  )
-})
-
-const cipaiScore = computed((): CipaiScoreBreakdown | null => {
-  if (!activeCipai.value) return null
-  const result = getCipaiScoreForPhrases(
-    phrasesForScoring.value,
-    activeCipaiId.value!,
-    cipaiScoringMode.value
-  )
-  return result?.score || null
-})
-
-const cipaiProgress = computed(() => {
-  return getCipaiProgress(
-    boardPhrases.value.map(p => ({
-      id: p.id, text: p.text, category: p.category,
-      position: p.position, rotation: p.rotation,
-      isPlaced: p.isPlaced, weight: p.weight,
-      rarity: p.rarity, source: p.source
-    })),
-    activeCipai.value
-  )
-})
-
-const nextLineHint = computed(() => {
-  return getNextLineHint(
-    boardPhrases.value.map(p => ({
-      id: p.id, text: p.text, category: p.category,
-      position: p.position, rotation: p.rotation,
-      isPlaced: p.isPlaced, weight: p.weight,
-      rarity: p.rarity, source: p.source
-    })),
-    activeCipai.value
-  )
-})
-
-const handleSelectCipai = (cipai: CipaiTemplate) => {
-  activeCipaiId.value = cipai.id
-  musicPlayer.playPluckSound()
-}
-
-const handleChangeCipaiScoringMode = (mode: CipaiScoringMode) => {
-  cipaiScoringMode.value = mode
-  musicPlayer.playPluckSound()
-}
-
-const handleCipaiRecommendPhrase = (phrase: Phrase) => {
-  if (placedPhraseIds.value.has(phrase.id)) {
-    return
-  }
-  handlePhraseSelect(phrase)
-}
-
-const handleOpenReview = (comp: Composition) => {
-  reviewingComposition.value = comp
-  showMentorReview.value = true
-  showPortfolio.value = false
-  musicPlayer.playPluckSound()
-}
-
-const handleCloseReview = () => {
-  showMentorReview.value = false
-  reviewingComposition.value = null
-}
-
-const handleLoadVersion = (version: CompositionVersion) => {
-  if (boardPhrases.value.length > 0) {
-    const hint = '加载版本将替换当前画布内容，是否保存当前内容为草稿？'
-    if (confirm(hint)) {
-      saveCurrentDraft('dialog_close')
-    } else {
-      clearDraft()
-    }
-  }
-
-  if (version.compositionId) {
-    const comp = compositions.value.find(c => c.id === version.compositionId)
-    if (comp && comp.chapterId !== currentChapterId.value) {
-      currentChapterId.value = comp.chapterId
-      gameState.value.currentChapterId = comp.chapterId
-      saveGameState({ currentChapterId: comp.chapterId })
-    }
-  }
-
-  boardPhrases.value = version.phrases.map(p => ({
-    ...p,
-    isDragging: false,
-    dragOffset: { x: 0, y: 0 },
-    width: 0,
-    height: 0
-  }))
-
-  historyManager.reset()
-  pushToHistory()
-  snapshotStorage.value = setCurrentSnapshot(null)
-
-  if (version.compositionId) {
-    const comp = compositions.value.find(c => c.id === version.compositionId)
-    if (comp) {
-      setEditingComposition(comp.id, comp.title)
-    }
-  }
-
-  showMentorReview.value = false
-  reviewingComposition.value = null
-  showVersionCompare.value = false
-  compareVersions.value = null
-  musicPlayer.playPluckSound()
-}
-
-const handleStartVersionCompare = (versions: [CompositionVersion, CompositionVersion]) => {
-  compareVersions.value = versions
-  showVersionCompare.value = true
-}
-
-const handleSwapCompareVersions = () => {
-  if (compareVersions.value) {
-    compareVersions.value = [compareVersions.value[1], compareVersions.value[0]]
-  }
-}
-
-const handleCloseVersionCompare = () => {
-  showVersionCompare.value = false
-  compareVersions.value = null
-}
-
-const combinedScore = computed((): ScoreBreakdown => {
-  const baseScore = score.value
-  if (!activeCipai.value || !cipaiScore.value) {
-    return baseScore
-  }
-  
-  const cipaiBonus = cipaiScore.value.total * 0.3
-  const total = Math.min(Math.round(baseScore.total + cipaiBonus), 100)
-  
-  return {
-    ...baseScore,
-    total,
-  }
-})
-
 const collectedPhraseTexts = computed((): Set<string> => {
   const collected = questState.value.phraseCollection.collectedPhrases
   return new Set(Object.keys(collected))
@@ -730,14 +533,6 @@ const totalPhraseCount = computed((): number => {
 
 const collectionProgress = computed((): number => {
   return questState.value.phraseCollection.totalCollected
-})
-
-const completedAchievementCount = computed((): number => {
-  return achievementProgress.value.filter(p => p.completed).length
-})
-
-const totalAchievementCount = computed((): number => {
-  return achievements.length
 })
 
 const lastMilestoneLevel = ref<'none' | 'bronze' | 'silver' | 'gold'>('none')
@@ -1223,267 +1018,6 @@ const checkQuestCompletion = () => {
   })
 }
 
-const checkAchievementUnlocks = () => {
-  const ctx = {
-    compositions: compositions.value,
-    boardPhrases: boardPhrases.value.map(p => ({
-      id: p.id, text: p.text, category: p.category,
-      position: p.position, rotation: p.rotation,
-      isPlaced: p.isPlaced, weight: p.weight,
-      rarity: p.rarity, source: p.source
-    })),
-    chapterId: currentChapterId.value,
-    score: score.value,
-    unlockedChapterCount: unlockedChapterIds.value.length
-  }
-
-  achievements.forEach(achievement => {
-    const progress = achievementProgress.value.find(p => p.achievementId === achievement.id)
-    if (progress?.completed) return
-
-    const unlocked = achievement.unlockConditions.every(c => checkCondition(c, ctx))
-    if (unlocked && !progress?.unlocked) {
-      unlockAchievement(achievement.id)
-      achievementProgress.value = loadAchievementProgress()
-    }
-  })
-}
-
-const checkAchievementCompletion = () => {
-  const ctx = {
-    compositions: compositions.value,
-    boardPhrases: boardPhrases.value.map(p => ({
-      id: p.id, text: p.text, category: p.category,
-      position: p.position, rotation: p.rotation,
-      isPlaced: p.isPlaced, weight: p.weight,
-      rarity: p.rarity, source: p.source
-    })),
-    chapterId: currentChapterId.value,
-    score: score.value,
-    unlockedChapterCount: unlockedChapterIds.value.length
-  }
-
-  achievements.forEach(achievement => {
-    const progress = achievementProgress.value.find(p => p.achievementId === achievement.id)
-    if (progress?.completed) return
-    if (!progress?.unlocked) return
-
-    const completed = achievement.completeConditions.every(c => checkCondition(c, ctx))
-    if (completed) {
-      completeAchievement(achievement.id)
-      achievementProgress.value = loadAchievementProgress()
-      musicPlayer.playMilestoneChime('gold')
-    }
-  })
-}
-
-const handleClaimAchievementReward = (achievementId: string) => {
-  const achievement = getAchievementById(achievementId)
-  if (!achievement || isAchievementRewardClaimed(achievementId)) return
-
-  achievement.rewards.forEach(reward => {
-    switch (reward.type) {
-      case 'phrase_unlock': {
-        const texts = reward.params.phraseTexts as string[]
-        const targetChapter = achievement.chapterId
-        texts.forEach(text => {
-          const phrase = createRewardPhrase(text)
-          if (phrase) {
-            addChapterRewardPhrase(targetChapter, phrase)
-            collectPhrase(text, targetChapter)
-          }
-        })
-        break
-      }
-      case 'phrase_pool_refresh': {
-        const targetChapterId = reward.params.chapterId as string
-        const category = reward.params.addCategory as PhraseCategory
-        const count = reward.params.count as number
-        const refreshed = refreshPoolByCategory(category, count)
-        if (targetChapterId === '__all__') {
-          chapters.forEach(ch => {
-            refreshed.forEach(p => {
-              addChapterRewardPhrase(ch.id, { ...p, id: `${p.id}_${ch.id}` })
-            })
-          })
-        } else {
-          refreshed.forEach(p => {
-            addChapterRewardPhrase(targetChapterId, p)
-          })
-        }
-        break
-      }
-      case 'score_weight_boost': {
-        addWeightBoost(reward.params.dimension as string, reward.params.boost as number)
-        break
-      }
-      case 'title_reward': {
-        addEarnedTitle(reward.params.title as string)
-        break
-      }
-    }
-  })
-
-  claimAchievementReward(achievementId)
-  achievementProgress.value = loadAchievementProgress()
-}
-
-const triggerStoryEvent = (event: StoryEventType) => {
-  currentStoryEvent.value = event
-  showStoryEvent.value = true
-}
-
-const checkStoryEventTriggers = () => {
-  const ctx = {
-    compositions: compositions.value,
-    boardPhrases: boardPhrases.value.map(p => ({
-      id: p.id, text: p.text, category: p.category,
-      position: p.position, rotation: p.rotation,
-      isPlaced: p.isPlaced, weight: p.weight,
-      rarity: p.rarity, source: p.source
-    })),
-    chapterId: currentChapterId.value,
-    score: score.value,
-    unlockedChapterCount: unlockedChapterIds.value.length
-  }
-
-  storyEvents.forEach(event => {
-    if (travelMapState.value.completedEventIds.includes(event.id)) return
-
-    const shouldTrigger = event.triggerParams ? Object.entries(event.triggerParams).every(([key, value]) => {
-      if (key === 'chapterId' && value !== ctx.chapterId) return false
-      if (key === 'minScore' && ctx.score.total < (value as number)) return false
-      if (key === 'minCount') {
-        if (event.triggerType === 'phrase_collect') {
-          return questState.value.phraseCollection.totalCollected >= (value as number)
-        }
-      }
-      return true
-    }) : true
-
-    if (shouldTrigger) {
-      completeStoryEvent(event.id)
-      travelMapState.value = loadTravelMapState()
-      triggerStoryEvent(event)
-    }
-  })
-}
-
-const handleMapNodeSelect = (node: MapNode) => {
-  visitMapNode(node.id)
-  travelMapState.value = loadTravelMapState()
-
-  if (node.eventId) {
-    const event = getStoryEventById(node.eventId)
-    if (event && !travelMapState.value.completedEventIds.includes(event.id)) {
-      completeStoryEvent(event.id)
-      travelMapState.value = loadTravelMapState()
-      triggerStoryEvent(event)
-    }
-  }
-
-  if (node.rewards) {
-    node.rewards.forEach(reward => {
-      if (reward.type === 'phrase' && reward.params.phraseTexts) {
-        const texts = reward.params.phraseTexts as string[]
-        texts.forEach(text => {
-          const phrase = createRewardPhrase(text)
-          if (phrase) {
-            addChapterRewardPhrase(node.chapterId, phrase)
-            collectPhrase(text, node.chapterId)
-          }
-        })
-      }
-      if (reward.type === 'title' && reward.params.title) {
-        addEarnedTitle(reward.params.title as string)
-      }
-    })
-  }
-
-  showTravelMap.value = false
-}
-
-const handleStoryEventChoice = (choiceId: string, consequence: any) => {
-  if (consequence?.type === 'quest_trigger' && consequence.params?.questId) {
-    unlockQuest(consequence.params.questId)
-    questState.value = loadQuestState()
-  }
-  showStoryEvent.value = false
-  currentStoryEvent.value = null
-  checkQuestUnlocks()
-  checkAchievementUnlocks()
-}
-
-const handleStoryEventClose = () => {
-  showStoryEvent.value = false
-  currentStoryEvent.value = null
-  checkQuestUnlocks()
-  checkAchievementUnlocks()
-}
-
-const handleCloseTravelMap = () => {
-  showTravelMap.value = false
-  if (boardPhrases.value.length > 0) {
-    saveCurrentDraft('dialog_close')
-  }
-}
-
-const handleCloseAchievementPanel = () => {
-  showAchievementPanel.value = false
-  if (boardPhrases.value.length > 0) {
-    saveCurrentDraft('dialog_close')
-  }
-}
-
-const handleClaimImpromptuReward = (topicId: string, tier: string, rewards: ImpromptuTopic['rewards'][0]['rewards']) => {
-  rewards.forEach(item => {
-    switch (item.type) {
-      case 'phrase_unlock': {
-        const texts = item.params.phraseTexts as string[]
-        texts.forEach(text => {
-          const phrase = createRewardPhrase(text)
-          if (phrase) {
-            addChapterRewardPhrase('ch1', phrase)
-            collectPhrase(text, undefined, `impromptu_${topicId}`)
-          }
-        })
-        break
-      }
-      case 'phrase_pool_refresh': {
-        const targetChapterId = item.params.chapterId as string
-        const category = item.params.addCategory as PhraseCategory
-        const count = item.params.count as number
-        const refreshed = refreshPoolByCategory(category, count)
-        if (targetChapterId === '__all__') {
-          chapters.forEach(ch => {
-            refreshed.forEach(p => {
-              addChapterRewardPhrase(ch.id, { ...p, id: `${p.id}_${ch.id}` })
-            })
-          })
-        } else {
-          refreshed.forEach(p => {
-            addChapterRewardPhrase(targetChapterId, p)
-          })
-        }
-        break
-      }
-      case 'score_weight_boost': {
-        addWeightBoost(item.params.dimension as string, item.params.boost as number)
-        break
-      }
-      case 'title_reward': {
-        addEarnedTitle(item.params.title as string)
-        break
-      }
-    }
-  })
-
-  claimImpromptuReward(topicId, tier)
-  impromptuState.value = loadImpromptuState()
-  questState.value = loadQuestState()
-  musicPlayer.playSuccessSound()
-}
-
 const handleClaimReward = (questId: string) => {
   const quest = getQuestById(questId)
   if (!quest || questState.value.claimedRewards.includes(questId)) return
@@ -1619,6 +1153,67 @@ const handleTipDismiss = () => {
   showRecommendationTip.value = false
 }
 
+const handleSubmitToSociety = (compositionId: string) => {
+  submitToSociety(compositionId)
+  societyState.value = loadSocietyState()
+  musicPlayer.playPluckSound()
+}
+
+const handleReviewSubmission = (submissionId: string, compositionId: string) => {
+  const comp = compositions.value.find(c => c.id === compositionId)
+  if (!comp) return
+  reviewSocietySubmission(submissionId, comp)
+  societyState.value = loadSocietyState()
+  musicPlayer.playSaveChime()
+}
+
+const handleExhibitComposition = (compositionId: string, themeId: string) => {
+  exhibitSocietyComposition(compositionId, themeId)
+  societyState.value = loadSocietyState()
+  musicPlayer.playSuccessSound()
+}
+
+const handleFeatureExhibition = (entryId: string) => {
+  featureExhibition(entryId)
+  societyState.value = loadSocietyState()
+  musicPlayer.playMilestoneChime('gold')
+}
+
+const handleUnlockRareChapter = (chapterId: string) => {
+  const newlyUnlocked = checkRareChapterUnlocks()
+  if (newlyUnlocked.includes(chapterId)) {
+    const chapter = rareChapters.find(c => c.id === chapterId)
+    if (chapter) {
+      chapter.phrases.forEach(p => {
+        const phrase = { ...p, id: `${p.id}_rare` }
+        addChapterRewardPhrase(chapterId, phrase)
+        collectPhrase(p.text, chapterId, `society_${chapterId}`)
+      })
+    }
+    societyState.value = loadSocietyState()
+    questState.value = loadQuestState()
+    musicPlayer.playMilestoneChime('gold')
+  }
+}
+
+const handleClaimSocietyMilestone = (rank: ReputationRank) => {
+  const milestone = reputationMilestones.find(m => m.rank === rank)
+  if (milestone) {
+    addEarnedTitle(milestone.titleReward)
+  }
+  claimSocietyMilestoneReward(rank)
+  societyState.value = loadSocietyState()
+  questState.value = loadQuestState()
+  musicPlayer.playSuccessSound()
+}
+
+const handleCloseSocietyPanel = () => {
+  showSocietyPanel.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
+}
+
 const activeGathering = computed(() => {
   if (!activeGatheringId.value) return null
   return getGatheringById(activeGatheringId.value) || null
@@ -1678,13 +1273,12 @@ const handleGatheringRemovePhrase = (phraseId: string) => {
   gatheringBoardPhrases.value = gatheringBoardPhrases.value.filter(p => p.id !== phraseId)
 }
 
-const handleGatheringSubmit = (elapsedSeconds?: number) => {
+const handleGatheringSubmit = () => {
   if (!activeGatheringId.value || !activeGatheringChapterId.value) return
   const chapter = activeGatheringChapter.value
   if (!chapter) return
 
-  const actualElapsed = typeof elapsedSeconds === 'number' ? elapsedSeconds : gatheringElapsedSeconds.value
-  const bonusResult = evaluateBonusRules(gatheringBoardPhrases.value, chapter.bonusRules, actualElapsed)
+  const bonusResult = evaluateBonusRules(gatheringBoardPhrases.value, chapter.bonusRules, gatheringElapsedSeconds.value)
   const finalScore = gatheringScore.value.total + bonusResult.totalBonus
 
   const now = Date.now()
@@ -1693,7 +1287,7 @@ const handleGatheringSubmit = (elapsedSeconds?: number) => {
     gatheringId: activeGatheringId.value,
     compositionId: `gcomp_${now}`,
     score: gatheringScore.value.total,
-    timeUsedSeconds: actualElapsed,
+    timeUsedSeconds: gatheringElapsedSeconds.value,
     completedAt: now,
     bonusAdjustment: bonusResult.totalBonus,
     triggeredBonuses: bonusResult.triggeredLabels
@@ -1815,18 +1409,6 @@ const handleArchiveGathering = (gatheringId: string) => {
   musicPlayer.playSuccessSound()
 }
 
-const handleViewGatheringRanking = (gatheringId: string) => {
-  const gathering = getGatheringById(gatheringId)
-  if (!gathering) return
-  rankingGatheringId.value = gatheringId
-  showGatheringRanking.value = true
-}
-
-const rankingGathering = computed(() => {
-  if (!rankingGatheringId.value) return null
-  return getGatheringById(rankingGatheringId.value) || null
-})
-
 onMounted(() => {
   document.addEventListener('click', handleFirstInteraction, { once: true })
   document.addEventListener('touchstart', handleFirstInteraction, { once: true, passive: true })
@@ -1843,9 +1425,6 @@ onMounted(() => {
   
   pushToHistory()
   checkQuestUnlocks()
-  checkAchievementUnlocks()
-  checkAchievementCompletion()
-  checkStoryEventTriggers()
   startAutoSave()
 })
 
@@ -1858,9 +1437,6 @@ onUnmounted(() => {
 watch(boardPhrases, () => {
   checkQuestUnlocks()
   checkQuestCompletion()
-  checkAchievementUnlocks()
-  checkAchievementCompletion()
-  checkStoryEventTriggers()
   if (!isApplyingHistory.value) {
     pushToHistory()
   }
@@ -1895,8 +1471,6 @@ watch(currentChapterId, (newId) => {
       :isFreeRealm="isFreeRealm"
       :currentTheme="currentTheme"
       :soundscapeLabel="soundscapeLabel"
-      :achievementCount="completedAchievementCount"
-      :totalAchievementCount="totalAchievementCount"
       @toggleMusic="handleToggleMusic"
       @changeVolume="handleChangeVolume"
       @openChapters="showChapters = true"
@@ -1905,10 +1479,7 @@ watch(currentChapterId, (newId) => {
       @openSnapshots="showSnapshotPanel = true"
       @openThemes="showThemePanel = true"
       @openGathering="showGatheringPanel = true"
-      @openCipaiWorkshop="showCipaiWorkshop = true"
-      @openTravelMap="showTravelMap = true"
-      @openAchievements="showAchievementPanel = true"
-      @openImpromptu="showImpromptuPanel = true"
+      @openSociety="showSocietyPanel = true"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -1973,30 +1544,6 @@ watch(currentChapterId, (newId) => {
           </div>
         </div>
         
-        <div v-if="activeCipai" class="cipai-status-bar">
-          <div class="cipai-status-header">
-            <span class="cipai-status-icon">📜</span>
-            <span class="cipai-status-name">{{ activeCipai.name }}</span>
-            <span class="cipai-status-mode">{{ currentCipaiRuleSet?.label || '正格' }}</span>
-            <button class="cipai-status-close" @click="activeCipaiId = null" title="退出词牌模式">✕</button>
-          </div>
-          <div class="cipai-status-progress">
-            <div class="progress-label">
-              <span>第 {{ cipaiProgress.filledLines }}/{{ cipaiProgress.totalLines }} 句</span>
-              <span>{{ cipaiProgress.percentage }}%</span>
-            </div>
-            <div class="progress-track">
-              <div class="progress-fill" :style="{ width: cipaiProgress.percentage + '%' }"></div>
-            </div>
-          </div>
-          <div v-if="nextLineHint" class="cipai-next-hint">
-            <span class="hint-label">下一句：</span>
-            <span class="hint-content">{{ nextLineHint.charCount }}字</span>
-            <span v-if="nextLineHint.isRhyme === '是'" class="hint-rhyme">韵</span>
-            <span v-if="nextLineHint.description" class="hint-desc">{{ nextLineHint.description }}</span>
-          </div>
-        </div>
-        
         <div class="board-wrapper">
           <CanvasBoard
             ref="canvasBoardRef"
@@ -2013,34 +1560,32 @@ watch(currentChapterId, (newId) => {
       <aside class="right-panel">
         <div class="panel-section">
           <ScorePanel
-            :score="activeCipai ? combinedScore : score"
+            :score="score"
             :phrasesCount="boardPhrases.length"
             :targetCount="currentChapter?.targetPhraseCount || 5"
             :weightBoosts="questState.activeWeightBoosts"
             :phrases="phrasesForScoring"
             :chapter="currentChapter"
-            :cipaiScore="cipaiScore"
-            :cipaiName="activeCipai?.name || null"
           />
         </div>
         
         <div class="panel-section pool-section">
           <div class="section-header">
             <div class="section-title-row">
-              <span class="section-title">{{ activeCipai ? '词句推荐' : '词句池' }}</span>
+              <span class="section-title">词句池</span>
               <button class="collection-badge interactive" title="查看词句图鉴" @click="showCollection = true">
                 ✦ {{ collectionProgress }} / {{ totalPhraseCount }}
               </button>
             </div>
             <span class="section-count">
-              {{ (cipaiSortedPhrases.length) - boardPhrases.length }}
+              {{ (enhancedChapterPhrases.length) - boardPhrases.length }}
               /
-              {{ cipaiSortedPhrases.length }}
+              {{ enhancedChapterPhrases.length }}
             </span>
           </div>
           <div class="pool-wrapper">
             <PhrasePool
-              :phrases="cipaiSortedPhrases"
+              :phrases="enhancedChapterPhrases"
               :placedPhraseIds="placedPhraseIds"
               :collectedPhrases="collectedPhraseTexts"
               @select="handlePhraseSelect"
@@ -2079,7 +1624,6 @@ watch(currentChapterId, (newId) => {
       @deleteCollection="handleDeleteCollection"
       @updateCollection="handleUpdateCollection"
       @refresh="handleRefreshPortfolio"
-      @openReview="handleOpenReview"
     />
     
     <SaveDialog
@@ -2185,7 +1729,6 @@ watch(currentChapterId, (newId) => {
       @startChapter="handleStartGatheringChapter"
       @claimReward="handleClaimGatheringReward"
       @archive="handleArchiveGathering"
-      @viewRanking="handleViewGatheringRanking"
     />
     
     <GatheringSession
@@ -2197,81 +1740,21 @@ watch(currentChapterId, (newId) => {
       :boardPhrases="gatheringBoardPhrases"
       @selectPhrase="handleGatheringSelectPhrase"
       @removePhrase="handleGatheringRemovePhrase"
-      @submit="handleGatheringSubmit($event)"
+      @submit="handleGatheringSubmit"
       @quit="handleGatheringQuit"
     />
     
-    <GatheringRankingPanel
-      v-if="showGatheringRanking && rankingGathering"
-      :gathering="rankingGathering"
-      @close="showGatheringRanking = false"
-    />
-    
-    <CipaiWorkshop
-      :visible="showCipaiWorkshop"
-      :phrases="phrasesForScoring"
-      :poolPhrases="enhancedChapterPhrases"
-      :activeCipaiId="activeCipaiId"
-      :scoringMode="cipaiScoringMode"
-      @close="showCipaiWorkshop = false"
-      @selectCipai="handleSelectCipai"
-      @changeScoringMode="handleChangeCipaiScoringMode"
-      @selectPhrase="handleCipaiRecommendPhrase"
-    />
-
-    <MentorReviewPanel
-      v-if="showMentorReview && reviewingComposition"
-      :composition="reviewingComposition"
-      @close="handleCloseReview"
-      @loadVersion="handleLoadVersion"
-      @startCompare="handleStartVersionCompare"
-      @loadComposition="handleLoadComposition"
-    />
-
-    <VersionCompare
-      v-if="showVersionCompare && compareVersions"
-      :versions="compareVersions"
-      @close="handleCloseVersionCompare"
-      @loadVersion="handleLoadVersion"
-      @swap="handleSwapCompareVersions"
-    />
-    
-    <TravelMap
-      v-if="showTravelMap"
-      :chapters="chapters"
-      :currentChapterId="currentChapterId"
-      :unlockedChapterIds="unlockedChapterIds"
-      :chapterProgress="chapterProgress"
-      :questState="questState"
-      :sideQuests="sideQuests"
-      :visitedNodeIds="travelMapState.visitedNodeIds"
-      :completedEventIds="travelMapState.completedEventIds"
-      :achievementProgress="achievementProgress"
-      @selectNode="handleMapNodeSelect"
-      @selectChapter="handleSelectChapter"
-      @close="handleCloseTravelMap"
-    />
-    
-    <StoryEvent
-      v-if="showStoryEvent && currentStoryEvent"
-      :event="currentStoryEvent"
-      :chapterId="currentStoryEvent.chapterId"
-      @choice="handleStoryEventChoice"
-      @close="handleStoryEventClose"
-    />
-    
-    <AchievementPanel
-      v-if="showAchievementPanel"
-      :chapters="chapters"
-      :achievementProgress="achievementProgress"
-      :questState="questState"
-      @close="handleCloseAchievementPanel"
-    />
-
-    <ImpromptuTopicPanel
-      :visible="showImpromptuPanel"
-      @close="showImpromptuPanel = false"
-      @claimReward="handleClaimImpromptuReward"
+    <PoetrySocietyPanel
+      v-if="showSocietyPanel"
+      :compositions="compositions"
+      :societyState="societyState"
+      @close="handleCloseSocietyPanel"
+      @submit="handleSubmitToSociety"
+      @review="handleReviewSubmission"
+      @exhibit="handleExhibitComposition"
+      @feature="handleFeatureExhibition"
+      @unlockRareChapter="handleUnlockRareChapter"
+      @claimMilestone="handleClaimSocietyMilestone"
     />
     
     <div class="bg-decoration">
@@ -2634,115 +2117,6 @@ watch(currentChapterId, (newId) => {
 .board-wrapper {
   flex: 1;
   min-height: 0;
-}
-
-.cipai-status-bar {
-  background: linear-gradient(135deg, rgba(201, 168, 108, 0.12), rgba(91, 122, 140, 0.08));
-  border: 1px solid rgba(201, 168, 108, 0.3);
-  border-radius: 10px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-}
-
-.cipai-status-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.cipai-status-icon {
-  font-size: 16px;
-}
-
-.cipai-status-name {
-  flex: 1;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--text-primary);
-  font-family: var(--font-brush);
-  font-size: 18px;
-}
-
-.cipai-status-mode {
-  padding: 2px 8px;
-  background: rgba(201, 168, 108, 0.2);
-  color: var(--accent-gold);
-  border-radius: 4px;
-  font-size: 11px;
-}
-
-.cipai-status-close {
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  border-radius: 4px;
-  font-size: 12px;
-  transition: all 0.2s;
-}
-
-.cipai-status-close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary);
-}
-
-.cipai-status-progress {
-  margin-bottom: 8px;
-}
-
-.cipai-status-progress .progress-label {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
-}
-
-.cipai-status-progress .progress-track {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.cipai-status-progress .progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent-gold), #e8c996);
-  border-radius: 2px;
-  transition: width 0.3s ease;
-}
-
-.cipai-next-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.hint-label {
-  color: var(--text-muted);
-}
-
-.hint-content {
-  color: var(--accent-gold);
-  font-weight: 500;
-}
-
-.hint-rhyme {
-  padding: 1px 6px;
-  background: var(--accent-gold);
-  color: #fff;
-  border-radius: 3px;
-  font-size: 10px;
-}
-
-.hint-desc {
-  color: var(--text-muted);
-  font-style: italic;
 }
 
 .right-panel {
