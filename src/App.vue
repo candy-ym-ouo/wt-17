@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, PoetrySocietyState, ReputationRank } from '@/types'
-import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
+import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes, getAllChapters, isRareChapter } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
 import { calculateScore, generatePoemTitle, generatePoemTitleOptions, generatePhasedGuidance } from '@/utils/scoring'
@@ -208,6 +208,10 @@ const getOrGenerateChapterDrops = (chapterId: string): Phrase[] => {
   }
   const ch = getChapterById(chapterId)
   if (!ch) return []
+  if (isRareChapter(ch)) {
+    chapterDropCache.value[chapterId] = ch.phrases
+    return ch.phrases
+  }
   const config = chapterDropConfigs[chapterId]
   if (!config || config.totalCount === 0) {
     chapterDropCache.value[chapterId] = ch.phrases
@@ -227,6 +231,10 @@ const getOrGenerateChapterDrops = (chapterId: string): Phrase[] => {
 const regenerateChapterDrops = (chapterId: string): Phrase[] => {
   const ch = getChapterById(chapterId)
   if (!ch) return []
+  if (isRareChapter(ch)) {
+    chapterDropCache.value[chapterId] = ch.phrases
+    return ch.phrases
+  }
   const config = chapterDropConfigs[chapterId]
   if (!config || config.totalCount === 0) {
     chapterDropCache.value[chapterId] = ch.phrases
@@ -433,10 +441,16 @@ const poemTitleOptions = computed((): TitleOption[] => {
   return generatePoemTitleOptions(phrasesForScoring.value, theme, currentChapter.value || undefined)
 })
 
+const allChapters = computed(() => getAllChapters())
+
 const unlockedChapterIds = computed(() => {
   const ids: string[] = []
-  chapters.forEach(ch => {
-    if (isChapterUnlocked(ch.id) || ch.unlocked) {
+  allChapters.value.forEach(ch => {
+    if (isRareChapter(ch)) {
+      if (societyState.value?.unlockedRareChapterIds?.includes(ch.id)) {
+        ids.push(ch.id)
+      }
+    } else if (isChapterUnlocked(ch.id) || ch.unlocked) {
       ids.push(ch.id)
     }
   })
@@ -446,7 +460,7 @@ const unlockedChapterIds = computed(() => {
 const chapterProgress = computed((): Record<string, ChapterProgress> => {
   const bestScores = getAllBestScores()
   const progress: Record<string, ChapterProgress> = {}
-  chapters.forEach(ch => {
+  allChapters.value.forEach(ch => {
     const bestScore = bestScores[ch.id] || 0
     const chapterQuests = sideQuests.filter(q => q.chapterId === ch.id)
     const completedQuests = chapterQuests
@@ -471,7 +485,7 @@ const chapterProgress = computed((): Record<string, ChapterProgress> => {
 
 const chaptersTitles = computed(() => {
   const map: Record<string, { title: string; accent: string }> = {}
-  chapters.forEach(ch => {
+  allChapters.value.forEach(ch => {
     map[ch.id] = { title: ch.title, accent: ch.accentColor }
   })
   return map
@@ -695,7 +709,7 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
     const currentIndex = chapters.findIndex(ch => ch.id === currentChapterId.value)
     if (currentIndex >= 0 && currentIndex < chapters.length - 1) {
       const nextChapter = chapters[currentIndex + 1]
-      if (!isChapterUnlocked(nextChapter.id)) {
+      if (!isRareChapter(nextChapter) && !isChapterUnlocked(nextChapter.id)) {
         unlockChapter(nextChapter.id)
         justUnlockedChapter.value = nextChapter.title
       }
@@ -826,7 +840,7 @@ const handleRefreshPortfolio = () => {
 const handleNextChapter = () => {
   showSaveDialog.value = false
   if (justUnlockedChapter.value) {
-    const nextCh = chapters.find(ch => ch.title === justUnlockedChapter.value)
+    const nextCh = allChapters.value.find(ch => ch.title === justUnlockedChapter.value)
     if (nextCh) {
       currentChapterId.value = nextCh.id
       gameState.value.currentChapterId = nextCh.id
@@ -1042,7 +1056,7 @@ const handleClaimReward = (questId: string) => {
         const count = reward.params.count as number
         const refreshed = refreshPoolByCategory(category, count)
         if (targetChapterId === '__all__') {
-          chapters.forEach(ch => {
+          allChapters.value.forEach(ch => {
             refreshed.forEach(p => {
               addChapterRewardPhrase(ch.id, { ...p, id: `${p.id}_${ch.id}` })
             })
@@ -1156,6 +1170,7 @@ const handleTipDismiss = () => {
 const handleSubmitToSociety = (compositionId: string) => {
   submitToSociety(compositionId)
   societyState.value = loadSocietyState()
+  handleUnlockRareChapter()
   musicPlayer.playPluckSound()
 }
 
@@ -1164,35 +1179,45 @@ const handleReviewSubmission = (submissionId: string, compositionId: string) => 
   if (!comp) return
   reviewSocietySubmission(submissionId, comp)
   societyState.value = loadSocietyState()
+  handleUnlockRareChapter()
   musicPlayer.playSaveChime()
 }
 
 const handleExhibitComposition = (compositionId: string, themeId: string) => {
   exhibitSocietyComposition(compositionId, themeId)
   societyState.value = loadSocietyState()
+  handleUnlockRareChapter()
   musicPlayer.playSuccessSound()
 }
 
 const handleFeatureExhibition = (entryId: string) => {
   featureExhibition(entryId)
   societyState.value = loadSocietyState()
+  handleUnlockRareChapter()
   musicPlayer.playMilestoneChime('gold')
 }
 
-const handleUnlockRareChapter = (chapterId: string) => {
+const handleUnlockRareChapter = (chapterId?: string) => {
   const newlyUnlocked = checkRareChapterUnlocks()
-  if (newlyUnlocked.includes(chapterId)) {
-    const chapter = rareChapters.find(c => c.id === chapterId)
-    if (chapter) {
-      chapter.phrases.forEach(p => {
-        const phrase = { ...p, id: `${p.id}_rare` }
-        addChapterRewardPhrase(chapterId, phrase)
-        collectPhrase(p.text, chapterId, `society_${chapterId}`)
-      })
-    }
+  if (newlyUnlocked.length > 0) {
+    newlyUnlocked.forEach(id => {
+      const chapter = rareChapters.find(c => c.id === id)
+      if (chapter) {
+        chapter.phrases.forEach(p => {
+          const phrase = { ...p, id: `${p.id}_rare` }
+          addChapterRewardPhrase(id, phrase)
+          collectPhrase(p.text, id, `society_${id}`)
+        })
+        if (id === newlyUnlocked[0]) {
+          justUnlockedChapter.value = chapter.title
+        }
+      }
+    })
     societyState.value = loadSocietyState()
     questState.value = loadQuestState()
     musicPlayer.playMilestoneChime('gold')
+  } else if (chapterId && societyState.value?.unlockedRareChapterIds?.includes(chapterId)) {
+    musicPlayer.playSuccessSound()
   }
 }
 
@@ -1370,7 +1395,7 @@ const handleClaimGatheringReward = (gatheringId: string, tier: string) => {
         const count = item.params.count as number
         const refreshed = refreshPoolByCategory(category, count)
         if (targetChapterId === '__all__') {
-          chapters.forEach(ch => {
+          allChapters.value.forEach(ch => {
             refreshed.forEach(p => {
               addChapterRewardPhrase(ch.id, { ...p, id: `${p.id}_${ch.id}` })
             })
@@ -1597,12 +1622,13 @@ watch(currentChapterId, (newId) => {
     
     <ChapterSelect
       v-if="showChapters"
-      :chapters="chapters"
+      :chapters="allChapters"
       :unlockedIds="unlockedChapterIds"
       :currentId="currentChapterId"
       :chapterProgress="chapterProgress"
       :questState="questState"
       :sideQuests="sideQuests"
+      :societyState="societyState"
       @select="handleSelectChapter"
       @close="handleCloseChapters"
     />

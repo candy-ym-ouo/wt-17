@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Chapter, ChapterProgress, QuestState, SideQuest } from '@/types'
+import type { Chapter, ChapterProgress, QuestState, SideQuest, RareChapter, PoetrySocietyState } from '@/types'
 import { getScoreGrade } from '@/utils/scoring'
+import { isRareChapter } from '@/data/chapters'
+import { REPUTATION_RANK_ICONS } from '@/types'
 
 interface Props {
   chapters: Chapter[]
@@ -10,6 +12,7 @@ interface Props {
   chapterProgress: Record<string, ChapterProgress>
   questState: QuestState
   sideQuests: SideQuest[]
+  societyState?: PoetrySocietyState | null
 }
 
 const props = defineProps<Props>()
@@ -40,6 +43,7 @@ const trajectoryItems = computed(() => {
     const isUnlocked = props.unlockedIds.includes(ch.id)
     const isCompleted = bestScore >= 60
     const isCurrent = ch.id === props.currentId
+    const rare = isRareChapter(ch) ? ch as RareChapter : null
     const chapterQuests = props.sideQuests.filter(q => q.chapterId === ch.id)
     const unlockedChapterQuests = chapterQuests.filter(q => props.questState.unlockedQuests.includes(q.id))
     const completedQuests = unlockedChapterQuests.filter(q => props.questState.completedQuests.includes(q.id))
@@ -84,7 +88,14 @@ const trajectoryItems = computed(() => {
       rewardPhrases: rewardPhrases.slice(0, 4),
       totalRewardCount: rewardPhrases.length,
       lockedQuestCount,
-      lockedRewardCount
+      lockedRewardCount,
+      isRare: !!rare,
+      rarity: rare?.rarity || null,
+      requiredRank: rare?.requiredRank || null,
+      requiredReputation: rare?.requiredReputation || null,
+      currentReputation: props.societyState?.reputation || 0,
+      currentRank: props.societyState?.currentRank || null,
+      rankIcon: rare ? REPUTATION_RANK_ICONS[rare.requiredRank] : null
     }
   })
 })
@@ -127,15 +138,19 @@ const overallStats = computed(() => {
             completed: item.isCompleted,
             current: item.isCurrent,
             locked: !item.isUnlocked,
-            unlocked: item.isUnlocked && !item.isCompleted
+            unlocked: item.isUnlocked && !item.isCompleted,
+            rare: item.isRare,
+            epic: item.rarity === 'epic',
+            legendary: item.rarity === 'legendary'
           }"
         >
           <div class="node-dot" :style="item.isUnlocked ? { borderColor: item.chapter.accentColor } : {}">
             <span v-if="item.isCompleted" class="node-check">✓</span>
+            <span v-else-if="item.isRare && item.isUnlocked" class="node-rare-icon">{{ item.rarity === 'legendary' ? '✦' : '◆' }}</span>
             <span v-else-if="item.isUnlocked" class="node-num">{{ idx + 1 }}</span>
-            <span v-else class="node-lock-icon">🔒</span>
+            <span v-else class="node-lock-icon">{{ item.isRare ? '🔮' : '🔒' }}</span>
           </div>
-          <div v-if="idx < trajectoryItems.length - 1" class="trajectory-line" :class="{ filled: item.isCompleted }"></div>
+          <div v-if="idx < trajectoryItems.length - 1" class="trajectory-line" :class="{ filled: item.isCompleted, rare: item.isRare }"></div>
         </div>
       </div>
 
@@ -147,18 +162,31 @@ const overallStats = computed(() => {
           :class="{
             active: item.isCurrent,
             locked: !item.isUnlocked,
-            completed: item.isCompleted
+            completed: item.isCompleted,
+            rare: item.isRare,
+            epic: item.rarity === 'epic',
+            legendary: item.rarity === 'legendary'
           }"
           @click="item.isUnlocked && emit('select', item.chapter.id)"
         >
           <div class="card-bg" :style="{ background: item.chapter.backgroundGradient }"></div>
           <div class="card-lock" v-if="!item.isUnlocked">
-            <span class="lock-icon">🔒</span>
-            <span class="lock-text">未解锁</span>
+            <span class="lock-icon">{{ item.isRare ? '🔮' : '🔒' }}</span>
+            <span class="lock-text">{{ item.isRare ? '诗社秘卷' : '未解锁' }}</span>
+            <div v-if="item.isRare && item.requiredRank" class="lock-requirement">
+              <span class="req-icon">{{ item.rankIcon }}</span>
+              <span class="req-text">{{ item.requiredRank }}</span>
+              <span class="req-rep">{{ item.currentReputation }}/{{ item.requiredReputation }} 声望</span>
+            </div>
           </div>
           <div class="card-content">
             <div class="card-top">
-              <div class="card-subtitle" :style="{ color: item.chapter.accentColor }">{{ item.chapter.subtitle }}</div>
+              <div class="card-subtitle" :style="{ color: item.chapter.accentColor }">
+                {{ item.chapter.subtitle }}
+                <span v-if="item.isRare" class="rare-badge" :class="item.rarity">
+                  {{ item.rarity === 'legendary' ? '传说' : '史诗' }}
+                </span>
+              </div>
               <div class="card-stars">
                 <span
                   v-for="s in 3"
@@ -649,6 +677,118 @@ const overallStats = computed(() => {
 .reward-more.locked {
   color: var(--text-muted);
   opacity: 0.7;
+}
+
+.trajectory-node.epic .node-dot {
+  box-shadow: 0 0 10px rgba(124, 169, 124, 0.4);
+}
+
+.trajectory-node.legendary .node-dot {
+  box-shadow: 0 0 15px rgba(155, 89, 182, 0.6);
+  animation: legendaryPulse 2s ease-in-out infinite;
+}
+
+@keyframes legendaryPulse {
+  0%, 100% { box-shadow: 0 0 15px rgba(155, 89, 182, 0.6); }
+  50% { box-shadow: 0 0 25px rgba(155, 89, 182, 0.9); }
+}
+
+.trajectory-line.rare {
+  background: linear-gradient(90deg, rgba(124, 169, 124, 0.3), rgba(155, 89, 182, 0.3));
+}
+
+.trajectory-line.rare.filled {
+  background: linear-gradient(90deg, #7ca97c, #9b59b6);
+}
+
+.node-rare-icon {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.trajectory-node.epic .node-rare-icon {
+  color: #7ca97c;
+}
+
+.trajectory-node.legendary .node-rare-icon {
+  color: #9b59b6;
+}
+
+.chapter-card.epic {
+  border: 1px solid rgba(124, 169, 124, 0.3);
+}
+
+.chapter-card.legendary {
+  border: 1px solid rgba(155, 89, 182, 0.4);
+  animation: legendaryGlow 3s ease-in-out infinite;
+}
+
+@keyframes legendaryGlow {
+  0%, 100% { box-shadow: 0 0 20px rgba(155, 89, 182, 0.2); }
+  50% { box-shadow: 0 0 40px rgba(155, 89, 182, 0.4); }
+}
+
+.chapter-card.epic:hover:not(.locked) {
+  box-shadow: 0 8px 32px rgba(124, 169, 124, 0.3);
+}
+
+.chapter-card.legendary:hover:not(.locked) {
+  box-shadow: 0 8px 40px rgba(155, 89, 182, 0.5);
+}
+
+.rare-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  font-size: 10px;
+  border-radius: 8px;
+  font-family: var(--font-serif);
+  letter-spacing: 1px;
+  vertical-align: middle;
+}
+
+.rare-badge.epic {
+  background: rgba(124, 169, 124, 0.15);
+  color: #7ca97c;
+  border: 1px solid rgba(124, 169, 124, 0.3);
+}
+
+.rare-badge.legendary {
+  background: rgba(155, 89, 182, 0.15);
+  color: #9b59b6;
+  border: 1px solid rgba(155, 89, 182, 0.4);
+  animation: badgeShimmer 2s ease-in-out infinite;
+}
+
+@keyframes badgeShimmer {
+  0%, 100% { background: rgba(155, 89, 182, 0.15); }
+  50% { background: rgba(155, 89, 182, 0.25); }
+}
+
+.lock-requirement {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.req-icon {
+  font-size: 16px;
+}
+
+.req-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-brush);
+  letter-spacing: 2px;
+}
+
+.req-rep {
+  font-size: 10px;
+  color: var(--accent-gold);
 }
 
 @keyframes fadeIn {

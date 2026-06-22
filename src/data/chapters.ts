@@ -1,9 +1,10 @@
-import type { Chapter, Phrase, PhraseCategory, ChapterSoundscape, SettlementRule } from '@/types'
+import type { Chapter, Phrase, PhraseCategory, ChapterSoundscape, SettlementRule, RareChapter } from '@/types'
 import {
   scenePhrases, emotionPhrases, timePhrases,
   actionPhrases, imageryPhrases, createPhrase,
   generateChapterPhrases, dropPhrases
 } from './phrases'
+import { rareChapters } from './poetrySociety'
 
 const pickRandom = <T>(arr: T[], n: number): T[] => {
   const shuffled = [...arr].sort(() => Math.random() - 0.5)
@@ -59,6 +60,22 @@ export const chapterDropConfigs: Record<string, ChapterDropConfig> = {
     qualifierWords: [],
     forbiddenWords: [],
     hiddenKeywords: []
+  },
+  rch_ygxx: {
+    themeKeywords: ['云深', '仙踪', '古径', '幽兰', '石苔', '空山', '松风', '鹤影'],
+    categoryDistribution: { scene: 0.3, imagery: 0.25, emotion: 0.2, action: 0.15, time: 0.1 },
+    totalCount: 16,
+    qualifierWords: ['隐', '仙', '空'],
+    forbiddenWords: ['繁华', '尘嚣'],
+    hiddenKeywords: ['云深', '忘机', '无极']
+  },
+  rch_tjmj: {
+    themeKeywords: ['天道', '玄机', '混沌', '太极', '无为', '天地', '万象', '虚极', '守静', '归根', '妙徼'],
+    categoryDistribution: { imagery: 0.3, action: 0.25, emotion: 0.2, scene: 0.15, time: 0.1 },
+    totalCount: 16,
+    qualifierWords: ['道', '无', '玄'],
+    forbiddenWords: ['浮华', '争名'],
+    hiddenKeywords: ['天道', '虚极', '众妙之门', '玄之又玄']
   }
 }
 
@@ -87,7 +104,20 @@ export const chapterSettlementRules: Record<string, SettlementRule[]> = {
     { type: 'forbidden_penalty', params: { words: ['清欢', '悠然'], penaltyPerWord: 6, label: '不合江湖' }, description: '每含一个禁用词（清欢、悠然），总分扣6' },
     { type: 'category_combo', params: { categories: ['action', 'imagery'], minCount: 2, bonus: 7, label: '行吟意象' }, description: '动作与意象类各含2词以上，加7分' },
   ],
-  ch5: []
+  ch5: [],
+  rch_ygxx: [
+    { type: 'qualifier_bonus', params: { words: ['隐', '仙', '空'], bonusPerWord: 5, label: '隐逸三境' }, description: '含隐逸关键词每字+5分' },
+    { type: 'hidden_keyword_trigger', params: { keywords: ['云深', '忘机', '无极'], bonus: 8, label: '仙踪暗合' }, description: '隐含仙踪词句每条+8分' },
+    { type: 'forbidden_penalty', params: { words: ['繁华', '尘嚣'], penaltyPerWord: 10, label: '尘心未泯' }, description: '含尘世词句每字-10分' },
+    { type: 'category_combo', params: { categories: ['scene', 'imagery', 'emotion'], minCategories: 3, bonus: 12, label: '情景交融' }, description: '景·意·情三类别齐全+12分' }
+  ],
+  rch_tjmj: [
+    { type: 'qualifier_bonus', params: { words: ['道', '无', '玄'], bonusPerWord: 6, label: '道门三谛' }, description: '含道门关键词每字+6分' },
+    { type: 'hidden_keyword_trigger', params: { keywords: ['天道', '虚极', '众妙之门', '玄之又玄'], bonus: 10, label: '天机暗合' }, description: '隐含天机词句每条+10分' },
+    { type: 'forbidden_penalty', params: { words: ['浮华', '争名'], penaltyPerWord: 15, label: '凡心未除' }, description: '含俗世词句每字-15分' },
+    { type: 'category_combo', params: { categories: ['imagery', 'action', 'emotion'], minCategories: 3, bonus: 15, label: '意行合一' }, description: '意·行·情三类别齐全+15分' },
+    { type: 'all_hidden_revealed', params: { keywords: ['天道', '虚极', '众妙之门', '玄之又玄'], bonus: 25, label: '天机尽泄' }, description: '全部隐含词句揭示+25分' }
+  ]
 }
 
 export const chapters: Chapter[] = [
@@ -317,9 +347,67 @@ export const chapterSoundscapes: Record<string, ChapterSoundscape> = {
     successNoteGap: 90,
     milestoneChime: [523.25, 659.25, 783.99, 1046.50, 1318.51],
     label: '太虚幻境'
+  },
+  rch_ygxx: {
+    droneBase: 123.47,
+    droneHarmonic: 185.00,
+    droneGain: 0.06,
+    harmonicGain: 0.03,
+    droneAnimCycle: 16,
+    scale: [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 523.25, 587.33],
+    melodyInterval: 6000,
+    melodyAttack: 4,
+    melodyDecay: 8,
+    melodyPeakGain: 0.025,
+    melodySkipChance: 0.5,
+    melodyTypes: ['sine'],
+    octaveShifts: [0.5, 1],
+    pluckFreqMultiplier: 1.6,
+    pluckDecay: 0.6,
+    successNotes: [440.00, 523.25, 659.25, 880.00],
+    successNoteGap: 180,
+    milestoneChime: [440.00, 523.25, 659.25, 880.00, 1318.51],
+    label: '幽谷仙踪'
+  },
+  rch_tjmj: {
+    droneBase: 92.50,
+    droneHarmonic: 146.83,
+    droneGain: 0.07,
+    harmonicGain: 0.04,
+    droneAnimCycle: 20,
+    scale: [196.00, 220.00, 261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33],
+    melodyInterval: 7000,
+    melodyAttack: 5,
+    melodyDecay: 10,
+    melodyPeakGain: 0.02,
+    melodySkipChance: 0.55,
+    melodyTypes: ['sine', 'triangle'],
+    octaveShifts: [0.5, 1, 2],
+    pluckFreqMultiplier: 2.2,
+    pluckDecay: 0.7,
+    successNotes: [392.00, 523.25, 659.25, 783.99, 1046.50],
+    successNoteGap: 200,
+    milestoneChime: [392.00, 523.25, 659.25, 783.99, 1046.50, 1318.51],
+    label: '天机玄韵'
   }
 }
 
+export const getAllChapters = (): Chapter[] => {
+  return [...chapters, ...rareChapters as Chapter[]]
+}
+
+export const getRareChapterById = (id: string): RareChapter | undefined => {
+  return rareChapters.find(ch => ch.id === id)
+}
+
+export const isRareChapter = (chapter: Chapter | RareChapter | undefined | null): chapter is RareChapter => {
+  if (!chapter) return false
+  return 'rarity' in chapter && (chapter.rarity === 'epic' || chapter.rarity === 'legendary')
+}
+
 export const getChapterById = (id: string): Chapter | undefined => {
-  return chapters.find(ch => ch.id === id)
+  const regular = chapters.find(ch => ch.id === id)
+  if (regular) return regular
+  const rare = rareChapters.find(ch => ch.id === id)
+  return rare as Chapter | undefined
 }
