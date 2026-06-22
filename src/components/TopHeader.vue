@@ -30,6 +30,7 @@ const emit = defineEmits<{
   (e: 'openTrial'): void
   (e: 'openClassicReconstruction'): void
   (e: 'openCollaborativePoetry'): void
+  (e: 'openJieqiGathering'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save'): void
@@ -136,6 +137,9 @@ const emit = defineEmits<{
       </button>
       <button class="icon-btn collab-btn" @click="emit('openCollaborativePoetry')" title="合卷联诗">
         🤝
+      </button>
+      <button class="icon-btn jieqi-btn" @click="emit('openJieqiGathering')" title="节序雅集">
+        🍃
       </button>
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺

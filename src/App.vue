@@ -66,6 +66,12 @@ import {
   getAllPoems,
   getPoemById
 } from '@/utils/collaborativePoetry'
+import JieqiGathering from '@/components/JieqiGathering.vue'
+import JieqiPortfolio from '@/components/JieqiPortfolio.vue'
+import JieqiSession from '@/components/JieqiSession.vue'
+import { loadJieqiState, completeJieqiChapter, addCompositionToJieqiPortfolio, refreshJieqiUnlocks } from '@/utils/jieqi'
+import type { JieqiState, JieqiType, JieqiChapter } from '@/types'
+import { getJieqiChapter, getJieqiById, getJieqiPhrases as getJieqiPhrasesData } from '@/data/jieqi'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -149,6 +155,13 @@ const showCollaborativePoetry = ref(false)
 const activeCollaborativePoemId = ref<string | null>(null)
 const showCollaborativeArchive = ref(false)
 const collaborativePoemsRevision = ref(0)
+
+const showJieqiGathering = ref(false)
+const showJieqiPortfolio = ref(false)
+const jieqiState = ref<JieqiState>(loadJieqiState())
+const activeJieqiId = ref<JieqiType | null>(null)
+const activeJieqiChapterId = ref<string | null>(null)
+const jieqiBoardPhrases = ref<Phrase[]>([])
 
 const archivedCollaborativePoems = computed(() => {
   void collaborativePoemsRevision.value
@@ -1523,7 +1536,144 @@ const rankingGathering = computed(() => {
   return getGatheringById(rankingGatheringId.value) || null
 })
 
+const activeJieqiChapter = computed((): JieqiChapter | null => {
+  if (!activeJieqiChapterId.value) return null
+  return getJieqiChapter(activeJieqiChapterId.value) || null
+})
+
+const activeJieqiInfo = computed(() => {
+  if (!activeJieqiId.value) return null
+  return getJieqiById(activeJieqiId.value) || null
+})
+
+const jieqiPhrases = computed<Phrase[]>(() => {
+  if (!activeJieqiId.value) return []
+  const jieqiPhraseList = getJieqiPhrasesData(activeJieqiId.value)
+  return jieqiPhraseList.map((jp, index) => ({
+    id: `jq_phrase_${activeJieqiId.value}_${index}`,
+    text: jp.text,
+    category: jp.category,
+    position: null,
+    rotation: 0,
+    isPlaced: false,
+    weight: 1,
+    rarity: jp.rarity,
+    source: {
+      type: 'chapter',
+      chapterId: `jq_${activeJieqiId.value}`
+    }
+  }))
+})
+
+const jieqiScore = computed<ScoreBreakdown>(() => {
+  if (!activeJieqiChapter.value || jieqiBoardPhrases.value.length === 0) {
+    return { coherence: 0, imagery: 0, rhythm: 0, themeMatch: 0, total: 0 }
+  }
+  const chapter = activeJieqiChapter.value
+  const jieqi = activeJieqiInfo.value
+  const fakeChapter: Chapter = {
+    id: chapter.id,
+    title: chapter.title,
+    subtitle: chapter.subtitle,
+    description: chapter.description,
+    theme: chapter.theme,
+    backgroundGradient: jieqi?.backgroundGradient || '',
+    accentColor: jieqi?.accentColor || '#c9a86c',
+    phrases: [],
+    unlocked: true,
+    targetPhraseCount: chapter.targetPhraseCount,
+    hint: chapter.hint,
+    qualifierWords: chapter.qualifierWords,
+    forbiddenWords: chapter.forbiddenWords,
+    hiddenKeywords: chapter.hiddenKeywords,
+    settlementRules: chapter.settlementRules
+  }
+  return calculateScore(jieqiBoardPhrases.value, fakeChapter, questState.value.activeWeightBoosts)
+})
+
+const handleStartJieqiChapter = (chapterId: string, jieqiId: string) => {
+  activeJieqiChapterId.value = chapterId
+  activeJieqiId.value = jieqiId as JieqiType
+  jieqiBoardPhrases.value = []
+  showJieqiGathering.value = false
+  musicPlayer.playPluckSound()
+}
+
+const handleJieqiSelectPhrase = (phrase: Phrase) => {
+  if (jieqiBoardPhrases.value.find(p => p.id === phrase.id)) return
+  jieqiBoardPhrases.value.push(phrase)
+  musicPlayer.playPluckSound()
+}
+
+const handleJieqiRemovePhrase = (phraseId: string) => {
+  jieqiBoardPhrases.value = jieqiBoardPhrases.value.filter(p => p.id !== phraseId)
+}
+
+const handleJieqiSubmit = () => {
+  if (!activeJieqiChapterId.value || !activeJieqiId.value) return
+  
+  const now = Date.now()
+  const finalScore = jieqiScore.value
+  
+  const composition: Composition = {
+    id: `jieqi_${now}`,
+    chapterId: activeJieqiChapterId.value,
+    phrases: jieqiBoardPhrases.value.map(p => ({
+      id: p.id,
+      text: p.text,
+      category: p.category,
+      position: p.position,
+      rotation: p.rotation,
+      isPlaced: p.isPlaced,
+      weight: p.weight,
+      rarity: p.rarity,
+      source: p.source
+    })),
+    score: finalScore,
+    createdAt: now,
+    updatedAt: now,
+    title: `${activeJieqiInfo.value?.name || '节气'}·${activeJieqiChapter.value?.title || '创作'}`
+  }
+  
+  saveComposition(composition)
+  compositions.value = loadCompositions()
+  
+  if (finalScore.total >= 60) {
+    completeJieqiChapter(activeJieqiChapterId.value)
+    addCompositionToJieqiPortfolio(activeJieqiId.value, composition.id)
+    jieqiState.value = loadJieqiState()
+  }
+  
+  const phraseTexts = jieqiBoardPhrases.value.map(p => p.text)
+  collectPhrases(phraseTexts)
+  questState.value = loadQuestState()
+  
+  musicPlayer.playSaveChime()
+  
+  activeJieqiChapterId.value = null
+  activeJieqiId.value = null
+  jieqiBoardPhrases.value = []
+  showJieqiGathering.value = true
+}
+
+const handleJieqiQuit = () => {
+  activeJieqiChapterId.value = null
+  activeJieqiId.value = null
+  jieqiBoardPhrases.value = []
+}
+
+const handleOpenJieqiPortfolio = () => {
+  showJieqiGathering.value = false
+  showJieqiPortfolio.value = true
+}
+
+const handleViewJieqiComposition = (comp: Composition) => {
+  showJieqiPortfolio.value = false
+  handleLoadComposition(comp)
+}
+
 onMounted(() => {
+  jieqiState.value = refreshJieqiUnlocks()
   document.addEventListener('click', handleFirstInteraction, { once: true })
   document.addEventListener('touchstart', handleFirstInteraction, { once: true, passive: true })
   document.addEventListener('keydown', handleKeydown)
@@ -1596,6 +1746,7 @@ watch(currentChapterId, (newId) => {
       @openCipaiWorkshop="showCipaiWorkshop = true"
       @openClassicReconstruction="showClassicReconstruction = true"
       @openCollaborativePoetry="showCollaborativePoetry = true"
+      @openJieqiGathering="showJieqiGathering = true"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -1948,6 +2099,35 @@ watch(currentChapterId, (newId) => {
       :archivedPoems="archivedCollaborativePoems"
       @refresh="handleRefreshCollaborativePoems"
       @open="(id) => { showCollaborativeArchive = false; handleOpenCollaborativePoem(id) }"
+    />
+
+    <JieqiGathering
+      v-if="showJieqiGathering"
+      :compositions="compositions"
+      @close="showJieqiGathering = false"
+      @startChapter="handleStartJieqiChapter"
+      @openPortfolio="handleOpenJieqiPortfolio"
+    />
+
+    <JieqiPortfolio
+      v-if="showJieqiPortfolio"
+      :compositions="compositions"
+      @close="showJieqiPortfolio = false"
+      @viewComposition="handleViewJieqiComposition"
+      @openGathering="showJieqiPortfolio = false; showJieqiGathering = true"
+    />
+
+    <JieqiSession
+      v-if="activeJieqiChapter && activeJieqiInfo"
+      :chapter="activeJieqiChapter"
+      :jieqiInfo="activeJieqiInfo"
+      :phrases="jieqiPhrases"
+      :score="jieqiScore"
+      :boardPhrases="jieqiBoardPhrases"
+      @selectPhrase="handleJieqiSelectPhrase"
+      @removePhrase="handleJieqiRemovePhrase"
+      @submit="handleJieqiSubmit"
+      @quit="handleJieqiQuit"
     />
 
     <div class="bg-decoration">

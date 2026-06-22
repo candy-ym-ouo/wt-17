@@ -1472,3 +1472,98 @@ export const COLLABORATIVE_STATUS_COLORS: Record<CollaborativeStatus, string> = 
   completed: '#9b59b6',
   archived: '#6b6858'
 }
+
+export type JieqiSeason = '春' | '夏' | '秋' | '冬'
+
+export type JieqiType = 
+  | 'lichun' | 'yushui' | 'jingzhe' | 'chunfen' | 'qingming' | 'guyu'
+  | 'lixia' | 'xiaoman' | 'mangzhong' | 'xiazhi' | 'xiaoshu' | 'dashu'
+  | 'liqiu' | 'chushu' | 'bailu' | 'qiufen' | 'hanlu' | 'shuangjiang'
+  | 'lidong' | 'xiaoxue' | 'daxue' | 'dongzhi' | 'xiaohan' | 'dahan'
+
+export interface JieqiInfo {
+  id: JieqiType
+  name: string
+  pinyin: string
+  season: JieqiSeason
+  order: number
+  month: number
+  day: number
+  description: string
+  poem: string
+  icon: string
+  accentColor: string
+  backgroundGradient: string
+  decoration: ThemeDecorationType
+}
+
+export interface JieqiChapter {
+  id: string
+  jieqiId: JieqiType
+  title: string
+  subtitle: string
+  description: string
+  theme: string
+  targetPhraseCount: number
+  hint: string
+  qualifierWords: string[]
+  forbiddenWords: string[]
+  hiddenKeywords: string[]
+  settlementRules: SettlementRule[]
+  difficulty: 'easy' | 'medium' | 'hard'
+}
+
+export interface JieqiPhrase {
+  text: string
+  category: PhraseCategory
+  rarity: PhraseRarity
+  jieqiId: JieqiType
+  isExclusive: boolean
+}
+
+export interface JieqiQuest {
+  id: string
+  jieqiId: JieqiType
+  title: string
+  description: string
+  icon: string
+  order: number
+  unlockConditions: QuestCondition[]
+  completeConditions: QuestCondition[]
+  rewards: QuestReward[]
+}
+
+export interface JieqiCollection {
+  id: string
+  jieqiId: JieqiType
+  title: string
+  subtitle: string
+  accentColor: string
+  maxSlots: number
+  description: string
+}
+
+export interface JieqiState {
+  unlockedJieqi: JieqiType[]
+  completedChapters: Record<string, boolean>
+  claimedRewards: Record<string, boolean>
+  collectedPhrases: string[]
+  earnedTitles: string[]
+  portfolioCompositions: Record<string, string[]>
+  activeJieqiId: JieqiType | null
+  currentYear: number
+}
+
+export const JIEQI_SEASON_LABELS: Record<JieqiSeason, string> = {
+  '春': '春季',
+  '夏': '夏季',
+  '秋': '秋季',
+  '冬': '冬季'
+}
+
+export const JIEQI_SEASON_COLORS: Record<JieqiSeason, string> = {
+  '春': '#7ca97c',
+  '夏': '#d4a574',
+  '秋': '#c97c7c',
+  '冬': '#7ca9c9'
+}
