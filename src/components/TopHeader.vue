@@ -31,6 +31,7 @@ const emit = defineEmits<{
   (e: 'openClassicReconstruction'): void
   (e: 'openCollaborativePoetry'): void
   (e: 'openJieqiGathering'): void
+  (e: 'openFraming'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save'): void
@@ -140,6 +141,9 @@ const emit = defineEmits<{
       </button>
       <button class="icon-btn jieqi-btn" @click="emit('openJieqiGathering')" title="节序雅集">
         🍃
+      </button>
+      <button class="icon-btn framing-btn" @click="emit('openFraming')" title="诗境装裱">
+        🖼️
       </button>
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺
@@ -418,6 +422,10 @@ const emit = defineEmits<{
 
 .classic-btn:hover {
   color: #7a9ea8;
+}
+
+.framing-btn:hover {
+  color: #d4a574;
 }
 
 .save-btn {

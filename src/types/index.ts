@@ -1567,3 +1567,100 @@ export const JIEQI_SEASON_COLORS: Record<JieqiSeason, string> = {
   '秋': '#c97c7c',
   '冬': '#7ca9c9'
 }
+
+export type FramingLayout = 'vertical-scroll' | 'horizontal-scroll' | 'fan' | 'album' | 'frame' | 'circular'
+
+export const FRAMING_LAYOUT_LABELS: Record<FramingLayout, string> = {
+  'vertical-scroll': '立轴',
+  'horizontal-scroll': '横卷',
+  'fan': '折扇',
+  'album': '册页',
+  'frame': '画框',
+  'circular': '团扇'
+}
+
+export const FRAMING_LAYOUT_ICONS: Record<FramingLayout, string> = {
+  'vertical-scroll': '📜',
+  'horizontal-scroll': '🎑',
+  'fan': '🪭',
+  'album': '📖',
+  'frame': '🖼️',
+  'circular': '🪭'
+}
+
+export type TitleStyle = 'seal-script' | 'running-script' | 'regular-script' | 'cursive'
+
+export const TITLE_STYLE_LABELS: Record<TitleStyle, string> = {
+  'seal-script': '篆书题签',
+  'running-script': '行书题签',
+  'regular-script': '楷书题签',
+  'cursive': '草书题签'
+}
+
+export type TitlePosition = 'top-right' | 'top-left' | 'top-center' | 'bottom-right' | 'bottom-left'
+
+export const TITLE_POSITION_LABELS: Record<TitlePosition, string> = {
+  'top-right': '右上',
+  'top-left': '左上',
+  'top-center': '居上',
+  'bottom-right': '右下',
+  'bottom-left': '左下'
+}
+
+export type SealType = 'author' | 'mood' | 'idiom' | 'zodiac' | 'custom'
+
+export const SEAL_TYPE_LABELS: Record<SealType, string> = {
+  'author': '名印',
+  'mood': '闲章',
+  'idiom': '成语印',
+  'zodiac': '生肖印',
+  'custom': '自定义印'
+}
+
+export interface SealConfig {
+  id: string
+  type: SealType
+  text: string
+  position: { x: number; y: number }
+  rotation: number
+  color: string
+  shape: 'square' | 'round' | 'oval'
+  size: number
+  opacity: number
+}
+
+export interface FramingConfig {
+  layout: FramingLayout
+  titleStyle: TitleStyle
+  titlePosition: TitlePosition
+  showTitle: boolean
+  showScore: boolean
+  seals: SealConfig[]
+  backgroundColor: string
+  borderColor: string
+  borderWidth: number
+  padding: number
+  paperTexture: 'plain' | 'rice' | 'bamboo' | 'silk' | 'aged'
+}
+
+export const PAPER_TEXTURE_LABELS: Record<FramingConfig['paperTexture'], string> = {
+  'plain': '素纸',
+  'rice': '宣纸',
+  'bamboo': '竹纸',
+  'silk': '绢帛',
+  'aged': '古纸'
+}
+
+export const DEFAULT_FRAMING_CONFIG: FramingConfig = {
+  layout: 'vertical-scroll',
+  titleStyle: 'seal-script',
+  titlePosition: 'top-right',
+  showTitle: true,
+  showScore: false,
+  seals: [],
+  backgroundColor: '#f5f0e8',
+  borderColor: '#c9a86c',
+  borderWidth: 2,
+  padding: 40,
+  paperTexture: 'rice'
+}

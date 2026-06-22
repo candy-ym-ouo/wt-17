@@ -69,6 +69,7 @@ import {
 import JieqiGathering from '@/components/JieqiGathering.vue'
 import JieqiPortfolio from '@/components/JieqiPortfolio.vue'
 import JieqiSession from '@/components/JieqiSession.vue'
+import PoeticFraming from '@/components/PoeticFraming.vue'
 import { loadJieqiState, completeJieqiChapter, addCompositionToJieqiPortfolio, refreshJieqiUnlocks, checkAndCompleteJieqiQuests, isJieqiPhraseUnlocked } from '@/utils/jieqi'
 import type { JieqiState, JieqiType, JieqiChapter } from '@/types'
 import { getJieqiChapter, getJieqiById, getJieqiPhrases as getJieqiPhrasesData } from '@/data/jieqi'
@@ -162,6 +163,9 @@ const jieqiState = ref<JieqiState>(loadJieqiState())
 const activeJieqiId = ref<JieqiType | null>(null)
 const activeJieqiChapterId = ref<string | null>(null)
 const jieqiBoardPhrases = ref<Phrase[]>([])
+
+const showFraming = ref(false)
+const framingComposition = ref<Composition | null>(null)
 
 const archivedCollaborativePoems = computed(() => {
   void collaborativePoemsRevision.value
@@ -1688,6 +1692,29 @@ const handleViewJieqiComposition = (comp: Composition) => {
   handleLoadComposition(comp)
 }
 
+const handleOpenFraming = () => {
+  if (isEditingComposition.value) {
+    const comp = compositions.value.find(c => c.id === editingComposition.value.compositionId)
+    if (comp) {
+      framingComposition.value = comp
+      showFraming.value = true
+      return
+    }
+  }
+  if (compositions.value.length > 0) {
+    const sorted = [...compositions.value].sort((a, b) => b.updatedAt - a.updatedAt)
+    framingComposition.value = sorted[0]
+    showFraming.value = true
+  } else {
+    alert('请先创作并保存一首诗')
+  }
+}
+
+const handleCloseFraming = () => {
+  showFraming.value = false
+  framingComposition.value = null
+}
+
 onMounted(() => {
   jieqiState.value = refreshJieqiUnlocks()
   document.addEventListener('click', handleFirstInteraction, { once: true })
@@ -1763,6 +1790,7 @@ watch(currentChapterId, (newId) => {
       @openClassicReconstruction="showClassicReconstruction = true"
       @openCollaborativePoetry="showCollaborativePoetry = true"
       @openJieqiGathering="showJieqiGathering = true"
+      @openFraming="handleOpenFraming"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -1933,6 +1961,7 @@ watch(currentChapterId, (newId) => {
       @deleteCollection="handleDeleteCollection"
       @updateCollection="handleUpdateCollection"
       @refresh="handleRefreshPortfolio"
+      @openFraming="(comp) => { framingComposition = comp; showFraming = true; showPortfolio = false }"
     />
     
     <SaveDialog
@@ -1948,6 +1977,7 @@ watch(currentChapterId, (newId) => {
       @saveAsNew="handleSaveAsNew"
       @cancel="handleCloseSaveDialog"
       @nextChapter="handleNextChapter"
+      @openFraming="handleOpenFraming"
     />
     
     <SideQuestPanel
@@ -2144,6 +2174,12 @@ watch(currentChapterId, (newId) => {
       @removePhrase="handleJieqiRemovePhrase"
       @submit="handleJieqiSubmit"
       @quit="handleJieqiQuit"
+    />
+
+    <PoeticFraming
+      v-if="showFraming && framingComposition"
+      :composition="framingComposition"
+      @close="handleCloseFraming"
     />
 
     <div class="bg-decoration">

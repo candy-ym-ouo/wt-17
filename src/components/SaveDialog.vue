@@ -22,6 +22,7 @@ const emit = defineEmits<{
   (e: 'saveAsNew', title: string, continueEditing: boolean): void
   (e: 'cancel'): void
   (e: 'nextChapter'): void
+  (e: 'openFraming'): void
 }>()
 
 const inputTitle = ref('')
@@ -180,6 +181,13 @@ const grade = () => getScoreGrade(props.score.total)
         </button>
         <button class="btn-confirm" @click="emit('confirm', inputTitle || '无题', postSaveMode === 'continue')">
           {{ isEditing ? '覆盖原稿' : '保存诗笺' }}
+        </button>
+        <button
+          class="btn-framing"
+          @click="emit('confirm', inputTitle || '无题', false); emit('openFraming')"
+        >
+          <span class="framing-icon">🖼️</span>
+          <span>装裱</span>
         </button>
       </div>
     </div>
@@ -383,7 +391,7 @@ const grade = () => getScoreGrade(props.score.total)
   border-top: 1px solid var(--border);
 }
 
-.btn-cancel, .btn-next, .btn-confirm, .btn-saveas {
+.btn-cancel, .btn-next, .btn-confirm, .btn-saveas, .btn-framing {
   flex: 1;
   padding: 12px 16px;
   border-radius: 10px;
@@ -470,6 +478,24 @@ const grade = () => getScoreGrade(props.score.total)
 
 .btn-saveas:hover {
   background: rgba(91, 122, 140, 0.25);
+}
+
+.btn-framing {
+  background: rgba(212, 165, 116, 0.15);
+  color: #d4a574;
+  border: 1px solid rgba(212, 165, 116, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.btn-framing:hover {
+  background: rgba(212, 165, 116, 0.25);
+}
+
+.framing-icon {
+  font-size: 14px;
 }
 
 .title-suggestions-section {

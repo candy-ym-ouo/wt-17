@@ -27,6 +27,7 @@ const emit = defineEmits<{
   (e: 'refresh'): void
   (e: 'startCompare', compositions: [Composition, Composition]): void
   (e: 'openReview', composition: Composition): void
+  (e: 'openFraming', composition: Composition): void
 }>()
 
 const filter = ref<FilterState>({
@@ -572,6 +573,13 @@ const getGroupAccent = (group: GroupedCompositions) => {
                   title="师友评点"
                 >
                   ✒️
+                </button>
+                <button
+                  class="action-btn framing-btn"
+                  @click.stop="emit('openFraming', comp)"
+                  title="诗境装裱"
+                >
+                  🖼️
                 </button>
                 <button class="action-btn delete-btn" @click.stop="emit('delete', comp.id)" title="删除">
                   🗑️
@@ -1406,6 +1414,11 @@ const getGroupAccent = (group: GroupedCompositions) => {
 .delete-btn:hover {
   background: rgba(139, 69, 87, 0.15);
   color: var(--accent-red);
+}
+
+.framing-btn:hover {
+  background: rgba(212, 165, 116, 0.15);
+  color: #d4a574;
 }
 
 .collection-picker {
