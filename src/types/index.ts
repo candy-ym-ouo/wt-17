@@ -665,613 +665,563 @@ export interface CipaiScoringRuleSet {
   rhymeTolerance: number
 }
 
-export type AnnotationType = 'praise' | 'suggestion' | 'question' | 'correction' | 'general'
+export type ClassicPoemDynasty = '先秦' | '汉' | '魏晋' | '南北朝' | '唐' | '宋' | '元' | '明' | '清'
+
+export type ClassicPoemType = '诗' | '词' | '曲' | '赋' | '文'
+
+export type ReconstructionDifficulty = '入门' | '进阶' | '精通' | '大师'
+
+export const RECONSTRUCTION_DIFFICULTY_LABELS: Record<ReconstructionDifficulty, string> = {
+  '入门': '入门',
+  '进阶': '进阶',
+  '精通': '精通',
+  '大师': '大师'
+}
+
+export const RECONSTRUCTION_DIFFICULTY_COLORS: Record<ReconstructionDifficulty, string> = {
+  '入门': '#7a9ea8',
+  '进阶': '#c9a86c',
+  '精通': '#a67bbf',
+  '大师': '#d85050'
+}
+
+export const DYNASTY_LABELS: Record<ClassicPoemDynasty, string> = {
+  '先秦': '先秦',
+  '汉': '汉',
+  '魏晋': '魏晋',
+  '南北朝': '南北朝',
+  '唐': '唐',
+  '宋': '宋',
+  '元': '元',
+  '明': '明',
+  '清': '清'
+}
+
+export const POEM_TYPE_LABELS: Record<ClassicPoemType, string> = {
+  '诗': '诗',
+  '词': '词',
+  '曲': '曲',
+  '赋': '赋',
+  '文': '文'
+}
+
+export interface ClassicPoem {
+  id: string
+  title: string
+  author: string
+  dynasty: ClassicPoemDynasty
+  type: ClassicPoemType
+  content: string[]
+  background: string
+  translation?: string
+  coreImageries: string[]
+  emotions: string[]
+  themes: string[]
+  keywords: string[]
+  difficulty: ReconstructionDifficulty
+  targetPhraseCount: number
+  accentColor: string
+  icon: string
+  unlockCondition?: {
+    type: 'score_threshold' | 'chapter_count' | 'reputation_rank'
+    params: Record<string, any>
+  }
+}
+
+export type ImageryDeviationType = 'missing' | 'partial' | 'matched' | 'extra' | 'preserved' | 'transformed'
+
+export interface ImageryDeviation {
+  imagery: string
+  originalImagery?: string
+  deviationType?: ImageryDeviationType
+  present: boolean
+  matchScore: number
+  matchedPhrases: string[]
+  matchedPhrase?: string
+  suggestion?: string
+}
+
+export interface ThemeDeviationDetail {
+  theme: string
+  matchDegree: number
+  supportingKeywords: string[]
+  missingElements: string[]
+}
+
+export interface EmotionDeviation {
+  emotion: string
+  matchDegree: number
+  presentEmotions: string[]
+  suggestion?: string
+}
+
+export interface StructuralDeviation {
+  type: 'line_count' | 'rhyme_scheme' | 'meter' | 'parallelism'
+  expected: any
+  actual: any
+  deviationLevel: 'high' | 'medium' | 'low'
+  deviationDegree?: number
+  suggestion?: string
+}
+
+export interface LexicalStyleAnalysis {
+  styleMatch: number
+  formalTone: number
+  classicalVocab: number
+  rhythmFlow: number
+  suggestions: string[]
+}
+
+export interface ReconstructionAnalysis {
+  imageryDeviations: ImageryDeviation[]
+  themeDeviation: {
+    matchDegree: number
+    originalTheme?: string
+    currentThemes?: string[]
+    details: ThemeDeviationDetail[]
+    missingElements?: string[]
+    extraElements?: string[]
+    overallSuggestion: string
+  }
+  emotionDeviation: {
+    matchDegree: number
+    originalEmotion?: string
+    currentEmotions?: string[]
+    intensityShift?: {
+      original: number
+      current: number
+      shift: number
+    }
+    details: EmotionDeviation[]
+    overallSuggestion: string
+  }
+  structuralDeviations: StructuralDeviation[]
+  lexicalStyle: LexicalStyleAnalysis
+}
+
+export interface RestorationScore {
+  imageryRestoration: number
+  themeRestoration: number
+  emotionRestoration: number
+  structureRestoration: number
+  styleRestoration: number
+  total: number
+  grade: ScoreGrade
+  stars: number
+}
+
+export interface ReconstructionSuggestion {
+  category: 'imagery' | 'theme' | 'emotion' | 'structure' | 'style'
+  priority: 'critical' | 'high' | 'medium' | 'low'
+  title: string
+  description: string
+  action?: string
+}
+
+export interface ReconstructionResult {
+  id: string
+  poemId: string
+  compositionId: string
+  score: RestorationScore
+  analysis: ReconstructionAnalysis
+  suggestions: ReconstructionSuggestion[]
+  elapsedSeconds: number
+  timeUsedSeconds?: number
+  phraseCount: number
+  isCleared: boolean
+  isNewBest: boolean
+  isFirstClear?: boolean
+  isNewRecord?: boolean
+  earnedTitles: string[]
+  unlockedPoems: string[]
+  createdAt: number
+}
+
+export interface ReconstructionState {
+  bestScores: Record<string, number>
+  bestTimes?: Record<string, number>
+  clearedPoemIds: string[]
+  earnedTitles: string[]
+  totalReconstructions: number
+  currentStreak: number
+  unlockedPoemIds: string[]
+}
+
+export type AchievementRarity = 'bronze' | 'silver' | 'gold' | 'legendary'
+export type AchievementCategory = 'reconstruction' | 'creation' | 'exploration' | 'collection' | 'social'
+
+export const ACHIEVEMENT_RARITY_LABELS: Record<AchievementRarity, string> = {
+  bronze: '铜',
+  silver: '银',
+  gold: '金',
+  legendary: '传说'
+}
+
+export const ACHIEVEMENT_RARITY_COLORS: Record<AchievementRarity, string> = {
+  bronze: '#cd7f32',
+  silver: '#c0c0c0',
+  gold: '#ffd700',
+  legendary: '#9400d3'
+}
+
+export const ACHIEVEMENT_CATEGORY_LABELS: Record<AchievementCategory, string> = {
+  reconstruction: '重构',
+  creation: '创作',
+  exploration: '探索',
+  collection: '收集',
+  social: '社交'
+}
+
+export interface AchievementCondition {
+  type: string
+  params: Record<string, any>
+}
+
+export interface Achievement {
+  id: string
+  title: string
+  description: string
+  category: AchievementCategory
+  rarity: AchievementRarity
+  icon: string
+  targetValue: number
+  conditionType: string
+  conditionParams: Record<string, any>
+  rewards: Record<string, any>
+  isSecret?: boolean
+  chapterId?: string
+  hint?: string
+  completeConditions?: AchievementCondition[]
+}
+
+export interface AchievementProgress {
+  achievementId: string
+  currentValue: number
+  unlocked: boolean
+  unlockedAt?: number
+  claimed: boolean
+  completed?: boolean
+  completedAt?: number
+}
+
+export type TimePeriod = 'dawn' | 'morning' | 'afternoon' | 'dusk' | 'night' | 'late_night'
+
+export const TIME_PERIOD_LABELS: Record<TimePeriod, string> = {
+  dawn: '黎明',
+  morning: '上午',
+  afternoon: '午后',
+  dusk: '黄昏',
+  night: '夜晚',
+  late_night: '深夜'
+}
+
+export const TIME_PERIOD_ICONS: Record<TimePeriod, string> = {
+  dawn: '🌅',
+  morning: '🌞',
+  afternoon: '☀️',
+  dusk: '🌇',
+  night: '🌙',
+  late_night: '🌌'
+}
+
+export interface ImpromptuTopic {
+  id: string
+  title: string
+  subtitle?: string
+  description?: string
+  prompt: string
+  timePeriod: TimePeriod
+  scene: string
+  mood: string
+  keywords: string[]
+  requiredKeywords?: string[]
+  forbiddenWords?: string[]
+  bonusRules?: any[]
+  targetPhraseCount: number
+  timeLimit: number
+  timeLimitSeconds?: number
+  themeId?: string
+  rewards?: any[]
+  accentColor: string
+}
+
+export interface ImpromptuTopicState {
+  activeTopicId: string | null
+  startAt: number | null
+  completedTopics: Record<string, { bestScore: number; attempts: number }>
+  topicResults?: Record<string, any>
+  totalCompleted?: number
+}
+
+export type TrialDifficulty = 'warmup' | 'standard' | 'challenge' | 'master'
+export type TrialThemeType = 'imagery' | 'emotion' | 'scene' | 'technique'
+
+export const TRIAL_DIFFICULTY_LABELS: Record<TrialDifficulty, string> = {
+  warmup: '热身',
+  standard: '标准',
+  challenge: '挑战',
+  master: '大师'
+}
+
+export const TRIAL_DIFFICULTY_COLORS: Record<TrialDifficulty, string> = {
+  warmup: '#7a9ea8',
+  standard: '#c9a86c',
+  challenge: '#d85050',
+  master: '#a67bbf'
+}
+
+export const TRIAL_THEME_TYPE_LABELS: Record<TrialThemeType, string> = {
+  imagery: '意象',
+  emotion: '情感',
+  scene: '场景',
+  technique: '技法'
+}
+
+export interface TrialRareImagery {
+  id?: string
+  word: string
+  points: number
+  description: string
+}
+
+export interface TrialTitle {
+  id?: string
+  name: string
+  requirement: string
+  threshold: number
+  color: string
+}
+
+export interface TrialSpectra {
+  id?: string
+  label: string
+  value: number
+  maxValue: number
+  description: string
+}
+
+export interface TrialTheme {
+  id: string
+  name?: string
+  title: string
+  subtitle: string
+  type: TrialThemeType
+  difficulty: TrialDifficulty
+  description: string
+  coreThemes: string[]
+  requiredKeywords: string[]
+  bonusKeywords: string[]
+  rareImageries: TrialRareImagery[]
+  forbiddenWords: string[]
+  timeLimit: number
+  targetPhraseCount: number
+  accentColor: string
+  backgroundGradient?: string
+  icon?: string
+  titles: TrialTitle[]
+  passThreshold: number
+  requiredScore?: number
+  unlockCondition?: {
+    type: string
+    params: Record<string, any>
+  }
+}
+
+export interface TrialState {
+  completedThemes: Record<string, { bestScore: number; bestTitle?: string; attempts: number }>
+  unlockedThemeIds: string[]
+  unlockedThemes?: string[]
+  totalTrials: number
+  earnedTitles?: string[]
+  clearedThemes?: string[]
+  bestScores?: Record<string, number>
+  bestTimes?: Record<string, number>
+  collectedImageries?: Record<string, number>
+  collectedSpectra?: Record<string, number>
+  currentStreak?: number
+  bestStreak?: number
+}
+
+export interface TrialSettlementResult {
+  score: number
+  grade: ScoreGrade
+  title?: TrialTitle
+  spectra: TrialSpectra[]
+  rareImageriesFound: TrialRareImagery[]
+  bonusPoints: number
+  deductions: number
+  isNewBest: boolean
+  isNewRecord?: boolean
+  totalAttempts: number
+  themeId?: string
+  finalScore?: number
+  timeUsedSeconds?: number
+  earnedImageries?: TrialRareImagery[]
+  earnedTitles?: TrialTitle[]
+  earnedSpectra?: TrialSpectra[]
+  unlockedPhrases?: string[]
+}
+
+export type AnnotationType = 'praise' | 'suggestion' | 'correction' | 'question'
+
+export const ANNOTATION_TYPE_LABELS: Record<AnnotationType, string> = {
+  praise: '赞赏',
+  suggestion: '建议',
+  correction: '纠正',
+  question: '疑问'
+}
+
+export const ANNOTATION_TYPE_COLORS: Record<AnnotationType, string> = {
+  praise: '#ffd700',
+  suggestion: '#4a9eff',
+  correction: '#ff6b6b',
+  question: '#9b59b6'
+}
 
 export interface Annotation {
   id: string
-  compositionId: string
-  phraseId: string | null
   type: AnnotationType
-  content: string
-  authorId: string
-  authorName: string
-  authorRole: 'mentor' | 'friend' | 'self'
-  createdAt: number
-  updatedAt: number
-  isResolved: boolean
-  resolvedAt?: number
-  replies: AnnotationReply[]
-}
-
-export interface AnnotationReply {
-  id: string
-  content: string
-  authorId: string
-  authorName: string
-  authorRole: 'mentor' | 'friend' | 'self'
+  phraseId?: string
+  text: string
+  comment: string
   createdAt: number
 }
 
 export interface CompositionVersion {
   id: string
   compositionId: string
-  versionNumber: number
-  label: string
-  description: string
   phrases: Phrase[]
   score: ScoreBreakdown
+  title: string
   createdAt: number
-  createdBy: string
-  basedOnVersionId: string | null
-  changeSummary?: string
+  annotations: Annotation[]
+  parentVersionId?: string
 }
 
-export interface PhraseDiff {
-  phraseId: string
-  phraseText: string
-  status: 'added' | 'removed' | 'modified' | 'unchanged'
-  originalPhrase?: Phrase
-  newPhrase?: Phrase
-}
+export type ReviewStatus = 'pending' | 'in_progress' | 'completed'
 
-export interface VersionComparison {
-  versionAId: string
-  versionBId: string
-  versionALabel: string
-  versionBLabel: string
-  added: Phrase[]
-  removed: Phrase[]
-  modified: { before: Phrase; after: Phrase }[]
-  unchanged: Phrase[]
-  scoreDifference: {
-    coherence: number
-    imagery: number
-    rhythm: number
-    themeMatch: number
-    total: number
-  }
+export interface ReviewState {
+  activeReviewId: string | null
+  reviews: Record<string, MentorReviewSession>
 }
-
-export type ReviewStatus = 'draft' | 'in_review' | 'reviewed' | 'revised'
 
 export interface MentorReviewSession {
   id: string
   compositionId: string
+  originalVersion: CompositionVersion
+  currentVersion: CompositionVersion
   status: ReviewStatus
-  mentorId: string | null
-  mentorName: string | null
-  invitedFriendIds: string[]
-  overallComment: string
-  createdAt: number
-  updatedAt: number
-  completedAt?: number
-}
-
-export interface ReviewState {
+  mentorName: string
+  mentorAvatar: string
   annotations: Annotation[]
-  versions: CompositionVersion[]
-  sessions: MentorReviewSession[]
-}
-
-export interface MapNode {
-  id: string
-  chapterId: string
-  x: number
-  y: number
-  label: string
-  type: 'chapter' | 'event' | 'milestone' | 'branch'
-  unlockCondition?: {
-    type: 'chapter_complete' | 'score_threshold' | 'quest_complete' | 'phrase_collection'
-    params: Record<string, any>
-  }
-  rewards?: {
-    type: 'phrase' | 'title' | 'score_boost' | 'chapter_unlock'
-    params: Record<string, any>
-  }[]
-  eventId?: string
-  icon: string
-  accentColor: string
-}
-
-export interface StoryEvent {
-  id: string
-  chapterId: string
-  triggerType: 'chapter_unlock' | 'chapter_complete' | 'quest_complete' | 'achievement_unlock' | 'phrase_collect'
-  triggerParams: Record<string, any>
-  title: string
-  content: string[]
-  character?: string
-  backgroundGradient?: string
-  accentColor: string
-  choices?: {
-    id: string
-    text: string
-    consequence?: {
-      type: 'phrase_unlock' | 'score_boost' | 'title' | 'quest_trigger'
-      params: Record<string, any>
-    }
-  }[]
-}
-
-export type AchievementCategory = 'chapter' | 'score' | 'collection' | 'combo' | 'streak' | 'exploration'
-
-export interface Achievement {
-  id: string
-  chapterId: string
-  category: AchievementCategory
-  title: string
-  description: string
-  icon: string
-  rarity: 'bronze' | 'silver' | 'gold' | 'platinum'
-  unlockConditions: QuestCondition[]
-  completeConditions: QuestCondition[]
-  rewards: QuestReward[]
-  accentColor: string
-  hint?: string
-  isSecret?: boolean
-}
-
-export interface AchievementProgress {
-  achievementId: string
-  unlocked: boolean
-  completed: boolean
-  claimed: boolean
-  unlockedAt?: number
+  overallComment: string
+  suggestions: string[]
+  startedAt: number
   completedAt?: number
 }
 
-export interface TravelMapState {
-  currentNodeId: string
-  visitedNodeIds: string[]
-  completedEventIds: string[]
-  achievements: AchievementProgress[]
-  unlockedChapterIds: string[]
-  mapExplorationPercent: number
+export type ReputationRank = 'novice' | 'scholar' | 'master' | 'sage' | 'immortal'
+export type SubmissionStatus = 'pending' | 'reviewing' | 'accepted' | 'rejected' | 'exhibited'
+export type ReviewVerdict = 'accept' | 'revise' | 'reject'
+
+export const REPUTATION_RANK_ORDER: ReputationRank[] = ['novice', 'scholar', 'master', 'sage', 'immortal']
+export const REPUTATION_RANK_MIN: Record<ReputationRank, number> = {
+  novice: 0,
+  scholar: 100,
+  master: 500,
+  sage: 1500,
+  immortal: 4000
+}
+export const REPUTATION_RANK_COLORS: Record<ReputationRank, string> = {
+  novice: '#8b9a85',
+  scholar: '#7a9ea8',
+  master: '#c9a86c',
+  sage: '#a67bbf',
+  immortal: '#d85050'
+}
+export const REPUTATION_RANK_ICONS: Record<ReputationRank, string> = {
+  novice: '🌱',
+  scholar: '📖',
+  master: '🎓',
+  sage: '🏮',
+  immortal: '✨'
 }
 
-export interface DropEvent {
+export interface RareChapter {
   id: string
   chapterId: string
-  triggerType: 'chapter_start' | 'score_milestone' | 'quest_complete' | 'story_choice'
-  triggerParams: Record<string, any>
-  phraseTexts: string[]
-  rarityBoost?: Partial<Record<PhraseRarity, number>>
-  isExclusive: boolean
-  description: string
-}
-
-export interface TravelMapNode {
-  node: MapNode
-  progress: {
-    unlocked: boolean
-    completed: boolean
-    visited: boolean
-    percent: number
-  }
-}
-
-export const ANNOTATION_TYPE_LABELS: Record<AnnotationType, string> = {
-  praise: '赞赏',
-  suggestion: '建议',
-  question: '疑问',
-  correction: '指正',
-  general: '总评'
-}
-
-export const ANNOTATION_TYPE_COLORS: Record<AnnotationType, string> = {
-  praise: '#7ca97c',
-  suggestion: '#c9a86c',
-  question: '#7a9ea8',
-  correction: '#c56b6b',
-  general: '#a8a498'
-}
-
-export const ACHIEVEMENT_RARITY_LABELS: Record<string, string> = {
-  bronze: '青铜',
-  silver: '白银',
-  gold: '黄金',
-  platinum: '铂金'
-}
-
-export const ACHIEVEMENT_RARITY_COLORS: Record<string, string> = {
-  bronze: '#cd7f32',
-  silver: '#c0c0c0',
-  gold: '#ffd700',
-  platinum: '#e5e4e2'
-}
-
-export const ACHIEVEMENT_CATEGORY_LABELS: Record<AchievementCategory, string> = {
-  chapter: '章节',
-  score: '评分',
-  collection: '收集',
-  combo: '组合',
-  streak: '连胜',
-  exploration: '探索'
-}
-
-export type TimePeriod = 'dawn' | 'morning' | 'noon' | 'afternoon' | 'dusk' | 'evening' | 'midnight'
-
-export const TIME_PERIOD_LABELS: Record<TimePeriod, string> = {
-  dawn: '黎明',
-  morning: '晨间',
-  noon: '正午',
-  afternoon: '午后',
-  dusk: '黄昏',
-  evening: '夜幕',
-  midnight: '子夜'
-}
-
-export const TIME_PERIOD_ICONS: Record<TimePeriod, string> = {
-  dawn: '🌅',
-  morning: '🌤️',
-  noon: '☀️',
-  afternoon: '🌇',
-  dusk: '🌆',
-  evening: '🌙',
-  midnight: '🌌'
-}
-
-export interface ImpromptuTopicTheme {
-  id: string
-  name: string
-  description: string
-  icon: string
-  accentColor: string
-  periodAffinity: TimePeriod[]
-  keywords: string[]
-  categoryWeights: Partial<Record<PhraseCategory, number>>
-  scoringPreference: Partial<ScoreWeights>
-  themeMatchBonus: number
-  preferredCategories: PhraseCategory[]
-  forbiddenWords?: string[]
-  requiredKeywords?: string[]
-}
-
-export interface ImpromptuTopic {
-  id: string
-  themeId: string
-  period: TimePeriod
   title: string
   subtitle: string
   description: string
+  rarity: AchievementRarity | 'epic'
+  reputationRequired?: number
+  requiredRank?: ReputationRank
+  requiredReputation?: number
+  theme: string
   accentColor: string
-  timeLimitSeconds: number
-  targetPhraseCount: number
-  requiredKeywords: string[]
-  forbiddenWords: string[]
-  bonusRules: ImpromptuTopicBonusRule[]
-  rewards: ImpromptuTopicReward[]
-  poolRefresh: {
-    addKeywords: string[]
-    addCategory: PhraseCategory
-    addCount: number
-  }
+  bonusPhrases: Phrase[]
 }
 
-export interface ImpromptuTopicBonusRule {
-  type: 'keyword_combo' | 'category_balance' | 'speed_bonus' | 'rare_phrase' | 'period_match'
-  label: string
-  description: string
-  bonus: number
-  params: Record<string, any>
+export interface PoetrySocietyState {
+  reputation: number
+  rank: ReputationRank
+  currentRank?: ReputationRank
+  joinDate: number
+  submissions: SocietySubmission[]
+  exhibitions: ExhibitionEntry[]
+  mentorReviews: number
+  totalAccepted: number
+  weeklyContestEntries: number
 }
-
-export interface ImpromptuTopicReward {
-  tier: 'bronze' | 'silver' | 'gold'
-  minScore: number
-  rewards: ImpromptuTopicRewardItem[]
-}
-
-export interface ImpromptuTopicRewardItem {
-  type: 'phrase_unlock' | 'title_reward' | 'score_weight_boost' | 'phrase_pool_refresh'
-  params: Record<string, any>
-}
-
-export interface ImpromptuTopicResult {
-  topicId: string
-  compositionId: string
-  score: number
-  timeUsedSeconds: number
-  completedAt: number
-  bonusAdjustment: number
-  triggeredBonuses: string[]
-  rewardTier: string | null
-}
-
-export interface ImpromptuTopicState {
-  completedTopics: string[]
-  topicResults: Record<string, ImpromptuTopicResult[]>
-  claimedRewards: Record<string, string[]>
-  totalCompleted: number
-}
-
-export type SubmissionStatus = 'pending' | 'accepted' | 'rejected' | 'showcased'
-export type ReviewVerdict = 'accept' | 'reject' | 'showcase'
-export type ReputationRank = '童生' | '秀才' | '举人' | '进士' | '翰林' | '大学士'
 
 export interface SocietySubmission {
   id: string
   compositionId: string
+  title: string
   submittedAt: number
   status: SubmissionStatus
-  reviewVerdict?: ReviewVerdict
+  reviewStartedAt?: number
   reviewedAt?: number
+  verdict?: ReviewVerdict
   reviewerName?: string
-  reviewComment?: string
-  reputationGained: number
-  exhibitionThemeId?: string
-}
-
-export interface ExhibitionTheme {
-  id: string
-  name: string
-  description: string
-  icon: string
-  accentColor: string
-  requiredKeywords: string[]
-  preferredCategories: PhraseCategory[]
-  minScore: number
-  maxSlots: number
-  bonusReputation: number
-  backgroundGradient: string
+  feedback?: string
+  reputationChange: number
+  exhibited: boolean
 }
 
 export interface ExhibitionEntry {
   id: string
   compositionId: string
-  themeId: string
+  title: string
+  authorName: string
   exhibitedAt: number
-  visitorCount: number
-  reputationEarned: number
-  isFeatured: boolean
+  likes: number
+  comments: number
+  theme: string
 }
 
-export interface ReputationMilestone {
-  rank: ReputationRank
-  minReputation: number
-  titleReward: string
-  unlockedFeatures: string[]
-  accentColor: string
-  icon: string
-}
-
-export interface RareChapter {
+export interface StoryEvent {
   id: string
   title: string
-  subtitle: string
   description: string
-  theme: string
-  backgroundGradient: string
-  accentColor: string
-  phrases: Phrase[]
+  chapterId: string
+  triggerType: 'first_entry' | 'score_milestone' | 'phrase_count' | 'quest_complete'
+  triggerParams: Record<string, any>
+  narrative: string
+  choices?: { id: string; text: string; consequence: string }[]
+  rewards?: Record<string, any>
+}
+
+export interface MapNode {
+  id: string
+  label: string
+  x: number
+  y: number
+  type: 'chapter' | 'landmark' | 'hidden' | 'event'
+  chapterId?: string
   unlocked: boolean
-  targetPhraseCount: number
-  hint: string
-  requiredRank: ReputationRank
-  requiredReputation: number
-  unlockQuestId?: string
-  rarity: 'epic' | 'legendary'
-  qualifierWords?: string[]
-  forbiddenWords?: string[]
-  hiddenKeywords?: string[]
-  settlementRules?: SettlementRule[]
+  visited: boolean
+  connections: string[]
+  icon?: string
 }
 
-export interface SocietyReviewCriterion {
-  id: string
-  name: string
-  description: string
-  weight: number
-  icon: string
-}
-
-export interface SocietyReviewResult {
-  criterionId: string
-  score: number
-  comment: string
-}
-
-export interface PoetrySocietyState {
-  reputation: number
-  currentRank: ReputationRank
-  submissions: SocietySubmission[]
-  exhibitions: ExhibitionEntry[]
-  unlockedRareChapterIds: string[]
-  totalSubmissions: number
-  totalAccepted: number
-  totalShowcased: number
-  totalExhibitions: number
-  claimedMilestoneRewards: string[]
-  featuredCompositionId: string | null
-}
-
-export const REPUTATION_RANK_ORDER: ReputationRank[] = ['童生', '秀才', '举人', '进士', '翰林', '大学士']
-
-export const REPUTATION_RANK_MIN: Record<ReputationRank, number> = {
-  '童生': 0,
-  '秀才': 100,
-  '举人': 300,
-  '进士': 600,
-  '翰林': 1000,
-  '大学士': 1500
-}
-
-export const REPUTATION_RANK_COLORS: Record<ReputationRank, string> = {
-  '童生': '#a8a498',
-  '秀才': '#7a9ea8',
-  '举人': '#7ca97c',
-  '进士': '#c9a86c',
-  '翰林': '#9b59b6',
-  '大学士': '#ffd700'
-}
-
-export const REPUTATION_RANK_ICONS: Record<ReputationRank, string> = {
-  '童生': '📖',
-  '秀才': '📝',
-  '举人': '🎓',
-  '进士': '🏛️',
-  '翰林': '⭐',
-  '大学士': '🏮'
-}
-
-export type TrialDifficulty = '初级' | '中级' | '高级' | '大师' | '传说'
-
-export type TrialThemeType = '山水' | '风月' | '边塞' | '闺怨' | '咏史' | '田园' | '送别' | '思乡'
-
-export interface TrialTheme {
-  id: string
-  name: string
-  type: TrialThemeType
-  description: string
-  icon: string
-  accentColor: string
-  backgroundGradient: string
-  difficulty: TrialDifficulty
-  requiredScore: number
-  targetPhraseCount: number
-  timeLimitSeconds: number
-  requiredKeywords: string[]
-  forbiddenWords: string[]
-  bonusRules: TrialBonusRule[]
-  rewards: TrialRewardPool
-  settlementRules: TrialSettlementRule[]
-  unlockCondition?: {
-    type: 'score_threshold' | 'chapter_count' | 'trial_clear' | 'reputation_rank'
-    params: Record<string, any>
-  }
-}
-
-export interface TrialBonusRule {
-  type: 'keyword_combo' | 'category_balance' | 'speed_bonus' | 'rare_phrase' | 'theme_match' | 'perfect_combo'
-  label: string
-  description: string
-  bonus: number
-  multiplier?: number
-  params: Record<string, any>
-}
-
-export interface TrialSettlementRule {
-  type: 'imagery_drop' | 'title_award' | 'score_multiplier' | 'phrase_unlock' | 'spectra_unlock'
-  params: Record<string, any>
-  description: string
-  minScore: number
-}
-
-export interface TrialRewardPool {
-  rareImageries: TrialRareImagery[]
-  titles: TrialTitle[]
-  spectra: TrialSpectra[]
-  phraseUnlocks: string[]
-}
-
-export interface TrialRareImagery {
-  id: string
-  name: string
-  description: string
-  rarity: 'rare' | 'epic' | 'legendary'
-  icon: string
-  phraseTexts: string[]
-  dropRate: number
-  isExclusive?: boolean
-}
-
-export interface TrialTitle {
-  id: string
-  name: string
-  description: string
-  rarity: 'rare' | 'epic' | 'legendary'
-  icon: string
-  condition: {
-    type: 'score_threshold' | 'speed_clear' | 'perfect_clear' | 'all_keywords' | 'no_forbidden'
-    params: Record<string, any>
-  }
-}
-
-export interface TrialSpectra {
-  id: string
-  name: string
-  description: string
-  rarity: 'rare' | 'epic' | 'legendary'
-  icon: string
-  pattern: string[]
-  dropRate: number
-  effect?: string
-}
-
-export interface TrialState {
-  unlockedThemes: string[]
-  clearedThemes: string[]
-  bestScores: Record<string, number>
-  bestTimes: Record<string, number>
-  earnedTitles: string[]
-  collectedImageries: string[]
-  collectedSpectra: string[]
-  totalTrials: number
-  totalCleared: number
-  currentStreak: number
-  bestStreak: number
-}
-
-export interface TrialSessionState {
-  themeId: string
-  startTime: number
-  elapsedSeconds: number
-  isPaused: boolean
-  isComplete: boolean
-  boardPhrases: Phrase[]
-}
-
-export interface TrialSettlementResult {
-  themeId: string
-  themeName: string
-  score: number
-  scoreGrade: ScoreGrade
-  timeUsedSeconds: number
-  triggeredBonuses: TrialBonusResult[]
-  totalBonus: number
-  scoreMultiplier: number
-  scoreBeforeMultiplier: number
-  finalScore: number
-  earnedImageries: TrialRareImagery[]
-  earnedTitles: TrialTitle[]
-  earnedSpectra: TrialSpectra[]
-  unlockedPhrases: string[]
-  isNewRecord: boolean
-  isFirstClear: boolean
-  stars: number
-}
-
-export interface TrialBonusResult {
-  type: string
-  label: string
-  bonus: number
-  multiplier?: number
-  description: string
-}
-
-export const TRIAL_DIFFICULTY_LABELS: Record<TrialDifficulty, string> = {
-  '初级': '初级',
-  '中级': '中级',
-  '高级': '高级',
-  '大师': '大师级',
-  '传说': '传说级'
-}
-
-export const TRIAL_DIFFICULTY_COLORS: Record<TrialDifficulty, string> = {
-  '初级': '#7ca97c',
-  '中级': '#7a9ea8',
-  '高级': '#c9a86c',
-  '大师': '#a87ac9',
-  '传说': '#c95b5b'
-}
-
-export const TRIAL_THEME_TYPE_LABELS: Record<TrialThemeType, string> = {
-  '山水': '山水田园',
-  '风月': '风花雪月',
-  '边塞': '边塞征战',
-  '闺怨': '闺怨情思',
-  '咏史': '咏史怀古',
-  '田园': '田园隐逸',
-  '送别': '送别离愁',
-  '思乡': '思乡怀人'
-}

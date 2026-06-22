@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, PoetrySocietyState, ReputationRank, TrialState, TrialSettlementResult, TrialTheme } from '@/types'
-import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes, getAllChapters, isRareChapter } from '@/data/chapters'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, ClassicPoem, ReconstructionState, ReconstructionResult } from '@/types'
+import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
-import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases, dropPhrases } from '@/data/phrases'
+import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
 import { calculateScore, generatePoemTitle, generatePoemTitleOptions, generatePhasedGuidance } from '@/utils/scoring'
 import { getThemeById, getDefaultTheme } from '@/data/themes'
 import { loadThemeState, getCurrentThemeId, setCurrentTheme, getCustomThemes } from '@/utils/storage'
@@ -34,6 +34,9 @@ import { musicPlayer } from '@/utils/music'
 import { generateWelcomeContent } from '@/utils/onboarding'
 import { poetryGatherings, getGatheringById, getGatheringChapterById, getGatheringChapterPhrases } from '@/data/poetryGatherings'
 import { loadGatheringState, saveGatheringState, setGatheringActive, clearActiveGathering, saveChapterResult, evaluateBonusRules, claimGatheringReward, archiveGathering, isRewardClaimed as isGatheringRewardClaimed } from '@/utils/poetryGathering'
+import { getCipaiById, getCipaiScoringRuleByMode, cipaiTemplates } from '@/data/cipaiTemplates'
+import { sortPhrasesForCipai, getCipaiProgress, getNextLineHint, getCipaiScoreForPhrases } from '@/utils/cipaiWorkshop'
+import type { CipaiTemplate, CipaiScoringMode, CipaiScoreBreakdown } from '@/types'
 
 import TopHeader from '@/components/TopHeader.vue'
 import PhrasePool from '@/components/PhrasePool.vue'
@@ -51,14 +54,18 @@ import WelcomeModal from '@/components/WelcomeModal.vue'
 import RecommendationTip from '@/components/RecommendationTip.vue'
 import PoetryGatheringPanel from '@/components/PoetryGatheringPanel.vue'
 import GatheringSession from '@/components/GatheringSession.vue'
-import PoetrySocietyPanel from '@/components/PoetrySocietyPanel.vue'
-import InkTrialPanel from '@/components/InkTrialPanel.vue'
-import TrialSession from '@/components/TrialSession.vue'
-import TrialSettlement from '@/components/TrialSettlement.vue'
-import { loadSocietyState, saveSocietyState, submitToSociety, reviewSubmission as reviewSocietySubmission, exhibitComposition as exhibitSocietyComposition, featureExhibition, checkRareChapterUnlocks, claimMilestoneReward as claimSocietyMilestoneReward } from '@/utils/poetrySociety'
-import { rareChapters, reputationMilestones } from '@/data/poetrySociety'
-import { loadTrialState, saveTrialState, settleTrial, saveTrialResult, isTrialUnlocked } from '@/utils/trials'
-import { getTrialById, trialThemes } from '@/data/trials'
+import GatheringRankingPanel from '@/components/GatheringRankingPanel.vue'
+import CipaiWorkshop from '@/components/CipaiWorkshop.vue'
+import { getPoemById } from '@/data/classicPoems'
+import { 
+  loadReconstructionState, 
+  saveReconstructionResult, 
+  saveReconstructionState 
+} from '@/utils/reconstructionStorage'
+import { generateRestorationResult } from '@/utils/reconstruction'
+import ReconstructionPanel from '@/components/ReconstructionPanel.vue'
+import ReconstructionSession from '@/components/ReconstructionSession.vue'
+import ReconstructionSettlement from '@/components/ReconstructionSettlement.vue'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -123,20 +130,29 @@ const autoSaveInterval = 30000
 const gatheringState = ref<GatheringState>(loadGatheringState())
 const showGatheringPanel = ref(false)
 const showGatheringSession = ref(false)
+const showGatheringRanking = ref(false)
+const rankingGatheringId = ref<string | null>(null)
 const activeGatheringId = ref<string | null>(null)
 const activeGatheringChapterId = ref<string | null>(null)
 const gatheringBoardPhrases = ref<Phrase[]>([])
 const gatheringElapsedSeconds = ref(0)
-
+const showCipaiWorkshop = ref(false)
+const activeCipaiId = ref<string | null>(null)
+const cipaiScoringMode = ref<CipaiScoringMode>('standard')
 const showSocietyPanel = ref(false)
-const societyState = ref<PoetrySocietyState>(loadSocietyState())
-
 const showTrialPanel = ref(false)
-const trialState = ref<TrialState>(loadTrialState())
-const showTrialSession = ref(false)
-const activeTrialId = ref<string | null>(null)
-const showTrialSettlement = ref(false)
-const trialSettlementResult = ref<TrialSettlementResult | null>(null)
+
+const showReconstructionPanel = ref(false)
+const showReconstructionSession = ref(false)
+const showReconstructionSettlement = ref(false)
+const activeReconstructionPoemId = ref<string | null>(null)
+const reconstructionState = ref<ReconstructionState>(loadReconstructionState())
+const reconstructionResult = ref<ReconstructionResult | null>(null)
+
+const activeReconstructionPoem = computed((): ClassicPoem | null => {
+  if (!activeReconstructionPoemId.value) return null
+  return getPoemById(activeReconstructionPoemId.value) || null
+})
 
 let autoSaveTimer: number | null = null
 
@@ -220,10 +236,6 @@ const getOrGenerateChapterDrops = (chapterId: string): Phrase[] => {
   }
   const ch = getChapterById(chapterId)
   if (!ch) return []
-  if (isRareChapter(ch)) {
-    chapterDropCache.value[chapterId] = ch.phrases
-    return ch.phrases
-  }
   const config = chapterDropConfigs[chapterId]
   if (!config || config.totalCount === 0) {
     chapterDropCache.value[chapterId] = ch.phrases
@@ -243,10 +255,6 @@ const getOrGenerateChapterDrops = (chapterId: string): Phrase[] => {
 const regenerateChapterDrops = (chapterId: string): Phrase[] => {
   const ch = getChapterById(chapterId)
   if (!ch) return []
-  if (isRareChapter(ch)) {
-    chapterDropCache.value[chapterId] = ch.phrases
-    return ch.phrases
-  }
   const config = chapterDropConfigs[chapterId]
   if (!config || config.totalCount === 0) {
     chapterDropCache.value[chapterId] = ch.phrases
@@ -453,16 +461,10 @@ const poemTitleOptions = computed((): TitleOption[] => {
   return generatePoemTitleOptions(phrasesForScoring.value, theme, currentChapter.value || undefined)
 })
 
-const allChapters = computed(() => getAllChapters())
-
 const unlockedChapterIds = computed(() => {
   const ids: string[] = []
-  allChapters.value.forEach(ch => {
-    if (isRareChapter(ch)) {
-      if (societyState.value?.unlockedRareChapterIds?.includes(ch.id)) {
-        ids.push(ch.id)
-      }
-    } else if (isChapterUnlocked(ch.id) || ch.unlocked) {
+  chapters.forEach(ch => {
+    if (isChapterUnlocked(ch.id) || ch.unlocked) {
       ids.push(ch.id)
     }
   })
@@ -472,7 +474,7 @@ const unlockedChapterIds = computed(() => {
 const chapterProgress = computed((): Record<string, ChapterProgress> => {
   const bestScores = getAllBestScores()
   const progress: Record<string, ChapterProgress> = {}
-  allChapters.value.forEach(ch => {
+  chapters.forEach(ch => {
     const bestScore = bestScores[ch.id] || 0
     const chapterQuests = sideQuests.filter(q => q.chapterId === ch.id)
     const completedQuests = chapterQuests
@@ -497,7 +499,7 @@ const chapterProgress = computed((): Record<string, ChapterProgress> => {
 
 const chaptersTitles = computed(() => {
   const map: Record<string, { title: string; accent: string }> = {}
-  allChapters.value.forEach(ch => {
+  chapters.forEach(ch => {
     map[ch.id] = { title: ch.title, accent: ch.accentColor }
   })
   return map
@@ -540,6 +542,98 @@ const handleThemesChanged = () => {
   themeState.value = loadThemeState()
   currentThemeId.value = getCurrentThemeId()
 }
+
+const activeCipai = computed((): CipaiTemplate | null => {
+  if (!activeCipaiId.value) return null
+  return getCipaiById(activeCipaiId.value) || null
+})
+
+const currentCipaiRuleSet = computed(() => {
+  return getCipaiScoringRuleByMode(cipaiScoringMode.value) || null
+})
+
+const cipaiSortedPhrases = computed((): Phrase[] => {
+  if (!activeCipai.value || !currentCipaiRuleSet.value) {
+    return enhancedChapterPhrases.value
+  }
+  return sortPhrasesForCipai(
+    enhancedChapterPhrases.value,
+    activeCipai.value,
+    boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
+    })),
+    currentCipaiRuleSet.value
+  )
+})
+
+const cipaiScore = computed((): CipaiScoreBreakdown | null => {
+  if (!activeCipai.value) return null
+  const result = getCipaiScoreForPhrases(
+    phrasesForScoring.value,
+    activeCipaiId.value!,
+    cipaiScoringMode.value
+  )
+  return result?.score || null
+})
+
+const cipaiProgress = computed(() => {
+  return getCipaiProgress(
+    boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
+    })),
+    activeCipai.value
+  )
+})
+
+const nextLineHint = computed(() => {
+  return getNextLineHint(
+    boardPhrases.value.map(p => ({
+      id: p.id, text: p.text, category: p.category,
+      position: p.position, rotation: p.rotation,
+      isPlaced: p.isPlaced, weight: p.weight,
+      rarity: p.rarity, source: p.source
+    })),
+    activeCipai.value
+  )
+})
+
+const handleSelectCipai = (cipai: CipaiTemplate) => {
+  activeCipaiId.value = cipai.id
+  musicPlayer.playPluckSound()
+}
+
+const handleChangeCipaiScoringMode = (mode: CipaiScoringMode) => {
+  cipaiScoringMode.value = mode
+  musicPlayer.playPluckSound()
+}
+
+const handleCipaiRecommendPhrase = (phrase: Phrase) => {
+  if (placedPhraseIds.value.has(phrase.id)) {
+    return
+  }
+  handlePhraseSelect(phrase)
+}
+
+const combinedScore = computed((): ScoreBreakdown => {
+  const baseScore = score.value
+  if (!activeCipai.value || !cipaiScore.value) {
+    return baseScore
+  }
+  
+  const cipaiBonus = cipaiScore.value.total * 0.3
+  const total = Math.min(Math.round(baseScore.total + cipaiBonus), 100)
+  
+  return {
+    ...baseScore,
+    total,
+  }
+})
 
 const collectedPhraseTexts = computed((): Set<string> => {
   const collected = questState.value.phraseCollection.collectedPhrases
@@ -721,7 +815,7 @@ const doSaveComposition = (title: string, asNewCopy: boolean, continueEditing: b
     const currentIndex = chapters.findIndex(ch => ch.id === currentChapterId.value)
     if (currentIndex >= 0 && currentIndex < chapters.length - 1) {
       const nextChapter = chapters[currentIndex + 1]
-      if (!isRareChapter(nextChapter) && !isChapterUnlocked(nextChapter.id)) {
+      if (!isChapterUnlocked(nextChapter.id)) {
         unlockChapter(nextChapter.id)
         justUnlockedChapter.value = nextChapter.title
       }
@@ -852,7 +946,7 @@ const handleRefreshPortfolio = () => {
 const handleNextChapter = () => {
   showSaveDialog.value = false
   if (justUnlockedChapter.value) {
-    const nextCh = allChapters.value.find(ch => ch.title === justUnlockedChapter.value)
+    const nextCh = chapters.find(ch => ch.title === justUnlockedChapter.value)
     if (nextCh) {
       currentChapterId.value = nextCh.id
       gameState.value.currentChapterId = nextCh.id
@@ -1068,7 +1162,7 @@ const handleClaimReward = (questId: string) => {
         const count = reward.params.count as number
         const refreshed = refreshPoolByCategory(category, count)
         if (targetChapterId === '__all__') {
-          allChapters.value.forEach(ch => {
+          chapters.forEach(ch => {
             refreshed.forEach(p => {
               addChapterRewardPhrase(ch.id, { ...p, id: `${p.id}_${ch.id}` })
             })
@@ -1179,162 +1273,6 @@ const handleTipDismiss = () => {
   showRecommendationTip.value = false
 }
 
-const handleSubmitToSociety = (compositionId: string) => {
-  submitToSociety(compositionId)
-  societyState.value = loadSocietyState()
-  handleUnlockRareChapter()
-  musicPlayer.playPluckSound()
-}
-
-const handleReviewSubmission = (submissionId: string, compositionId: string) => {
-  const comp = compositions.value.find(c => c.id === compositionId)
-  if (!comp) return
-  reviewSocietySubmission(submissionId, comp)
-  societyState.value = loadSocietyState()
-  handleUnlockRareChapter()
-  musicPlayer.playSaveChime()
-}
-
-const handleExhibitComposition = (compositionId: string, themeId: string) => {
-  exhibitSocietyComposition(compositionId, themeId)
-  societyState.value = loadSocietyState()
-  handleUnlockRareChapter()
-  musicPlayer.playSuccessSound()
-}
-
-const handleFeatureExhibition = (entryId: string) => {
-  featureExhibition(entryId)
-  societyState.value = loadSocietyState()
-  handleUnlockRareChapter()
-  musicPlayer.playMilestoneChime('gold')
-}
-
-const handleUnlockRareChapter = (chapterId?: string) => {
-  const newlyUnlocked = checkRareChapterUnlocks()
-  if (newlyUnlocked.length > 0) {
-    newlyUnlocked.forEach(id => {
-      const chapter = rareChapters.find(c => c.id === id)
-      if (chapter) {
-        chapter.phrases.forEach(p => {
-          const phrase = { ...p, id: `${p.id}_rare` }
-          addChapterRewardPhrase(id, phrase)
-          collectPhrase(p.text, id, `society_${id}`)
-        })
-        if (id === newlyUnlocked[0]) {
-          justUnlockedChapter.value = chapter.title
-        }
-      }
-    })
-    societyState.value = loadSocietyState()
-    questState.value = loadQuestState()
-    musicPlayer.playMilestoneChime('gold')
-  } else if (chapterId && societyState.value?.unlockedRareChapterIds?.includes(chapterId)) {
-    musicPlayer.playSuccessSound()
-  }
-}
-
-const handleClaimSocietyMilestone = (rank: ReputationRank) => {
-  const milestone = reputationMilestones.find(m => m.rank === rank)
-  if (milestone) {
-    addEarnedTitle(milestone.titleReward)
-  }
-  claimSocietyMilestoneReward(rank)
-  societyState.value = loadSocietyState()
-  questState.value = loadQuestState()
-  musicPlayer.playSuccessSound()
-}
-
-const handleCloseSocietyPanel = () => {
-  showSocietyPanel.value = false
-  if (boardPhrases.value.length > 0) {
-    saveCurrentDraft('dialog_close')
-  }
-}
-
-const handleCloseTrialPanel = () => {
-  showTrialPanel.value = false
-  if (boardPhrases.value.length > 0) {
-    saveCurrentDraft('dialog_close')
-  }
-}
-
-const activeTrial = computed((): TrialTheme | null => {
-  if (!activeTrialId.value) return null
-  return getTrialById(activeTrialId.value) || null
-})
-
-const trialPhrases = computed((): Phrase[] => {
-  if (!activeTrialId.value) return []
-  const trial = getTrialById(activeTrialId.value)
-  if (!trial) return []
-  
-  const allPhrases = getAllPhrases()
-  
-  return dropPhrases(allPhrases, {
-    totalCount: 30,
-    themeKeywords: trial.requiredKeywords,
-    themeMatchBoost: 2.5,
-    forbiddenWords: trial.forbiddenWords
-  })
-})
-
-const handleStartTrial = (trialId: string) => {
-  if (!isTrialUnlocked(trialId)) return
-  
-  activeTrialId.value = trialId
-  showTrialPanel.value = false
-  showTrialSession.value = true
-  musicPlayer.playPluckSound()
-}
-
-const handleTrialSelectPhrase = (phrase: Phrase) => {
-  musicPlayer.playPluckSound()
-}
-
-const handleTrialRemovePhrase = (phraseId: string) => {
-  musicPlayer.playPluckSound()
-}
-
-const handleTrialSubmit = (phrases: Phrase[], elapsedSeconds: number) => {
-  if (!activeTrialId.value) return
-  
-  const result = settleTrial(activeTrialId.value, phrases, elapsedSeconds)
-  trialSettlementResult.value = result
-  saveTrialResult(result)
-  
-  trialState.value = loadTrialState()
-  questState.value = loadQuestState()
-  
-  showTrialSession.value = false
-  showTrialSettlement.value = true
-  
-  musicPlayer.playSaveChime()
-}
-
-const handleTrialQuit = () => {
-  showTrialSession.value = false
-  activeTrialId.value = null
-}
-
-const handleTrialSettlementClose = () => {
-  showTrialSettlement.value = false
-  trialSettlementResult.value = null
-  showTrialPanel.value = true
-}
-
-const handleTrialRetry = () => {
-  showTrialSettlement.value = false
-  trialSettlementResult.value = null
-  showTrialSession.value = true
-}
-
-const handleTrialBackToList = () => {
-  showTrialSettlement.value = false
-  trialSettlementResult.value = null
-  activeTrialId.value = null
-  showTrialPanel.value = true
-}
-
 const activeGathering = computed(() => {
   if (!activeGatheringId.value) return null
   return getGatheringById(activeGatheringId.value) || null
@@ -1394,12 +1332,13 @@ const handleGatheringRemovePhrase = (phraseId: string) => {
   gatheringBoardPhrases.value = gatheringBoardPhrases.value.filter(p => p.id !== phraseId)
 }
 
-const handleGatheringSubmit = () => {
+const handleGatheringSubmit = (elapsedSeconds?: number) => {
   if (!activeGatheringId.value || !activeGatheringChapterId.value) return
   const chapter = activeGatheringChapter.value
   if (!chapter) return
 
-  const bonusResult = evaluateBonusRules(gatheringBoardPhrases.value, chapter.bonusRules, gatheringElapsedSeconds.value)
+  const actualElapsed = typeof elapsedSeconds === 'number' ? elapsedSeconds : gatheringElapsedSeconds.value
+  const bonusResult = evaluateBonusRules(gatheringBoardPhrases.value, chapter.bonusRules, actualElapsed)
   const finalScore = gatheringScore.value.total + bonusResult.totalBonus
 
   const now = Date.now()
@@ -1408,7 +1347,7 @@ const handleGatheringSubmit = () => {
     gatheringId: activeGatheringId.value,
     compositionId: `gcomp_${now}`,
     score: gatheringScore.value.total,
-    timeUsedSeconds: gatheringElapsedSeconds.value,
+    timeUsedSeconds: actualElapsed,
     completedAt: now,
     bonusAdjustment: bonusResult.totalBonus,
     triggeredBonuses: bonusResult.triggeredLabels
@@ -1491,7 +1430,7 @@ const handleClaimGatheringReward = (gatheringId: string, tier: string) => {
         const count = item.params.count as number
         const refreshed = refreshPoolByCategory(category, count)
         if (targetChapterId === '__all__') {
-          allChapters.value.forEach(ch => {
+          chapters.forEach(ch => {
             refreshed.forEach(p => {
               addChapterRewardPhrase(ch.id, { ...p, id: `${p.id}_${ch.id}` })
             })
@@ -1528,6 +1467,125 @@ const handleArchiveGathering = (gatheringId: string) => {
   compositions.value = loadCompositions()
   collections.value = loadCollections()
   musicPlayer.playSuccessSound()
+}
+
+const handleViewGatheringRanking = (gatheringId: string) => {
+  const gathering = getGatheringById(gatheringId)
+  if (!gathering) return
+  rankingGatheringId.value = gatheringId
+  showGatheringRanking.value = true
+}
+
+const rankingGathering = computed(() => {
+  if (!rankingGatheringId.value) return null
+  return getGatheringById(rankingGatheringId.value) || null
+})
+
+const handleOpenReconstruction = () => {
+  reconstructionState.value = loadReconstructionState()
+  showReconstructionPanel.value = true
+}
+
+const handleStartReconstruction = (poemId: string) => {
+  activeReconstructionPoemId.value = poemId
+  showReconstructionPanel.value = false
+  showReconstructionSession.value = true
+  musicPlayer.playPluckSound()
+}
+
+const handleReconstructionSelectPhrase = (phrase: Phrase) => {
+  musicPlayer.playPluckSound()
+}
+
+const handleReconstructionRemovePhrase = (phraseId: string) => {
+  musicPlayer.playPluckSound()
+}
+
+const handleReconstructionSubmit = (phrases: Phrase[], elapsedSeconds: number) => {
+  if (!activeReconstructionPoemId.value) return
+  const poem = getPoemById(activeReconstructionPoemId.value)
+  if (!poem) return
+  
+  const result = generateRestorationResult(poem, phrases, elapsedSeconds, {
+    bestScores: reconstructionState.value.bestScores,
+    clearedPoemIds: reconstructionState.value.clearedPoemIds
+  })
+  
+  const newState = saveReconstructionResult(result)
+  reconstructionState.value = newState
+  
+  const now = Date.now()
+  const composition: Composition = {
+    id: result.compositionId,
+    chapterId: `recon_${activeReconstructionPoemId.value}`,
+    phrases: phrases.map(p => ({
+      id: p.id,
+      text: p.text,
+      category: p.category,
+      position: p.position,
+      rotation: p.rotation,
+      isPlaced: p.isPlaced,
+      weight: p.weight,
+      rarity: p.rarity,
+      source: p.source
+    })),
+    score: {
+      coherence: result.score.imageryRestoration,
+      imagery: result.score.themeRestoration,
+      rhythm: result.score.structureRestoration,
+      themeMatch: result.score.emotionRestoration,
+      total: result.score.total
+    },
+    createdAt: now,
+    updatedAt: now,
+    title: `重构·${poem.title}`
+  }
+  saveComposition(composition)
+  compositions.value = loadCompositions()
+  
+  const phraseTexts = phrases.map(p => p.text)
+  collectPhrases(phraseTexts)
+  questState.value = loadQuestState()
+  
+  reconstructionResult.value = result
+  showReconstructionSession.value = false
+  showReconstructionSettlement.value = true
+  
+  musicPlayer.playSaveChime()
+}
+
+const handleReconstructionQuit = () => {
+  showReconstructionSession.value = false
+  activeReconstructionPoemId.value = null
+}
+
+const handleReconstructionCloseSettlement = () => {
+  showReconstructionSettlement.value = false
+  reconstructionResult.value = null
+  showReconstructionPanel.value = true
+  reconstructionState.value = loadReconstructionState()
+}
+
+const handleReconstructionRetry = () => {
+  showReconstructionSettlement.value = false
+  reconstructionResult.value = null
+  showReconstructionSession.value = true
+  musicPlayer.playPluckSound()
+}
+
+const handleReconstructionBackToList = () => {
+  showReconstructionSettlement.value = false
+  reconstructionResult.value = null
+  activeReconstructionPoemId.value = null
+  showReconstructionPanel.value = true
+  reconstructionState.value = loadReconstructionState()
+}
+
+const handleCloseReconstructionPanel = () => {
+  showReconstructionPanel.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
 }
 
 onMounted(() => {
@@ -1602,6 +1660,8 @@ watch(currentChapterId, (newId) => {
       @openGathering="showGatheringPanel = true"
       @openSociety="showSocietyPanel = true"
       @openTrial="showTrialPanel = true"
+      @openCipaiWorkshop="showCipaiWorkshop = true"
+      @openReconstruction="handleOpenReconstruction"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -1666,6 +1726,30 @@ watch(currentChapterId, (newId) => {
           </div>
         </div>
         
+        <div v-if="activeCipai" class="cipai-status-bar">
+          <div class="cipai-status-header">
+            <span class="cipai-status-icon">📜</span>
+            <span class="cipai-status-name">{{ activeCipai.name }}</span>
+            <span class="cipai-status-mode">{{ currentCipaiRuleSet?.label || '正格' }}</span>
+            <button class="cipai-status-close" @click="activeCipaiId = null" title="退出词牌模式">✕</button>
+          </div>
+          <div class="cipai-status-progress">
+            <div class="progress-label">
+              <span>第 {{ cipaiProgress.filledLines }}/{{ cipaiProgress.totalLines }} 句</span>
+              <span>{{ cipaiProgress.percentage }}%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" :style="{ width: cipaiProgress.percentage + '%' }"></div>
+            </div>
+          </div>
+          <div v-if="nextLineHint" class="cipai-next-hint">
+            <span class="hint-label">下一句：</span>
+            <span class="hint-content">{{ nextLineHint.charCount }}字</span>
+            <span v-if="nextLineHint.isRhyme === '是'" class="hint-rhyme">韵</span>
+            <span v-if="nextLineHint.description" class="hint-desc">{{ nextLineHint.description }}</span>
+          </div>
+        </div>
+        
         <div class="board-wrapper">
           <CanvasBoard
             ref="canvasBoardRef"
@@ -1682,32 +1766,34 @@ watch(currentChapterId, (newId) => {
       <aside class="right-panel">
         <div class="panel-section">
           <ScorePanel
-            :score="score"
+            :score="activeCipai ? combinedScore : score"
             :phrasesCount="boardPhrases.length"
             :targetCount="currentChapter?.targetPhraseCount || 5"
             :weightBoosts="questState.activeWeightBoosts"
             :phrases="phrasesForScoring"
             :chapter="currentChapter"
+            :cipaiScore="cipaiScore"
+            :cipaiName="activeCipai?.name || null"
           />
         </div>
         
         <div class="panel-section pool-section">
           <div class="section-header">
             <div class="section-title-row">
-              <span class="section-title">词句池</span>
+              <span class="section-title">{{ activeCipai ? '词句推荐' : '词句池' }}</span>
               <button class="collection-badge interactive" title="查看词句图鉴" @click="showCollection = true">
                 ✦ {{ collectionProgress }} / {{ totalPhraseCount }}
               </button>
             </div>
             <span class="section-count">
-              {{ (enhancedChapterPhrases.length) - boardPhrases.length }}
+              {{ (cipaiSortedPhrases.length) - boardPhrases.length }}
               /
-              {{ enhancedChapterPhrases.length }}
+              {{ cipaiSortedPhrases.length }}
             </span>
           </div>
           <div class="pool-wrapper">
             <PhrasePool
-              :phrases="enhancedChapterPhrases"
+              :phrases="cipaiSortedPhrases"
               :placedPhraseIds="placedPhraseIds"
               :collectedPhrases="collectedPhraseTexts"
               @select="handlePhraseSelect"
@@ -1719,13 +1805,12 @@ watch(currentChapterId, (newId) => {
     
     <ChapterSelect
       v-if="showChapters"
-      :chapters="allChapters"
+      :chapters="chapters"
       :unlockedIds="unlockedChapterIds"
       :currentId="currentChapterId"
       :chapterProgress="chapterProgress"
       :questState="questState"
       :sideQuests="sideQuests"
-      :societyState="societyState"
       @select="handleSelectChapter"
       @close="handleCloseChapters"
     />
@@ -1852,6 +1937,7 @@ watch(currentChapterId, (newId) => {
       @startChapter="handleStartGatheringChapter"
       @claimReward="handleClaimGatheringReward"
       @archive="handleArchiveGathering"
+      @viewRanking="handleViewGatheringRanking"
     />
     
     <GatheringSession
@@ -1863,46 +1949,51 @@ watch(currentChapterId, (newId) => {
       :boardPhrases="gatheringBoardPhrases"
       @selectPhrase="handleGatheringSelectPhrase"
       @removePhrase="handleGatheringRemovePhrase"
-      @submit="handleGatheringSubmit"
+      @submit="handleGatheringSubmit($event)"
       @quit="handleGatheringQuit"
     />
     
-    <PoetrySocietyPanel
-      v-if="showSocietyPanel"
-      :compositions="compositions"
-      :societyState="societyState"
-      @close="handleCloseSocietyPanel"
-      @submit="handleSubmitToSociety"
-      @review="handleReviewSubmission"
-      @exhibit="handleExhibitComposition"
-      @feature="handleFeatureExhibition"
-      @unlockRareChapter="handleUnlockRareChapter"
-      @claimMilestone="handleClaimSocietyMilestone"
+    <GatheringRankingPanel
+      v-if="showGatheringRanking && rankingGathering"
+      :gathering="rankingGathering"
+      @close="showGatheringRanking = false"
     />
     
-    <InkTrialPanel
-      v-if="showTrialPanel"
-      :trialState="trialState"
-      @close="handleCloseTrialPanel"
-      @startTrial="handleStartTrial"
+    <CipaiWorkshop
+      :visible="showCipaiWorkshop"
+      :phrases="phrasesForScoring"
+      :poolPhrases="enhancedChapterPhrases"
+      :activeCipaiId="activeCipaiId"
+      :scoringMode="cipaiScoringMode"
+      @close="showCipaiWorkshop = false"
+      @selectCipai="handleSelectCipai"
+      @changeScoringMode="handleChangeCipaiScoringMode"
+      @selectPhrase="handleCipaiRecommendPhrase"
     />
     
-    <TrialSession
-      v-if="showTrialSession && activeTrial"
-      :trial="activeTrial"
-      :phrases="trialPhrases"
-      @selectPhrase="handleTrialSelectPhrase"
-      @removePhrase="handleTrialRemovePhrase"
-      @submit="handleTrialSubmit"
-      @quit="handleTrialQuit"
+    <ReconstructionPanel
+      v-if="showReconstructionPanel"
+      :reconstructionState="reconstructionState"
+      @close="handleCloseReconstructionPanel"
+      @startReconstruction="handleStartReconstruction"
     />
     
-    <TrialSettlement
-      v-if="showTrialSettlement && trialSettlementResult"
-      :result="trialSettlementResult"
-      @close="handleTrialSettlementClose"
-      @retry="handleTrialRetry"
-      @back="handleTrialBackToList"
+    <ReconstructionSession
+      v-if="showReconstructionSession && activeReconstructionPoem"
+      :poem="activeReconstructionPoem"
+      @selectPhrase="handleReconstructionSelectPhrase"
+      @removePhrase="handleReconstructionRemovePhrase"
+      @submit="handleReconstructionSubmit"
+      @quit="handleReconstructionQuit"
+    />
+    
+    <ReconstructionSettlement
+      v-if="showReconstructionSettlement && reconstructionResult && activeReconstructionPoem"
+      :result="reconstructionResult"
+      :poem="activeReconstructionPoem"
+      @close="handleReconstructionCloseSettlement"
+      @retry="handleReconstructionRetry"
+      @backToList="handleReconstructionBackToList"
     />
     
     <div class="bg-decoration">
@@ -2265,6 +2356,115 @@ watch(currentChapterId, (newId) => {
 .board-wrapper {
   flex: 1;
   min-height: 0;
+}
+
+.cipai-status-bar {
+  background: linear-gradient(135deg, rgba(201, 168, 108, 0.12), rgba(91, 122, 140, 0.08));
+  border: 1px solid rgba(201, 168, 108, 0.3);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.cipai-status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cipai-status-icon {
+  font-size: 16px;
+}
+
+.cipai-status-name {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-family: var(--font-brush);
+  font-size: 18px;
+}
+
+.cipai-status-mode {
+  padding: 2px 8px;
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.cipai-status-close {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  border-radius: 4px;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.cipai-status-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.cipai-status-progress {
+  margin-bottom: 8px;
+}
+
+.cipai-status-progress .progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.cipai-status-progress .progress-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.cipai-status-progress .progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-gold), #e8c996);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.cipai-next-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.hint-label {
+  color: var(--text-muted);
+}
+
+.hint-content {
+  color: var(--accent-gold);
+  font-weight: 500;
+}
+
+.hint-rhyme {
+  padding: 1px 6px;
+  background: var(--accent-gold);
+  color: #fff;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.hint-desc {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .right-panel {
