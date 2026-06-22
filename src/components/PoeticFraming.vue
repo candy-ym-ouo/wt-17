@@ -154,6 +154,132 @@ const isDarkBackground = computed(() => {
 const textColor = computed(() => isDarkBackground.value ? '#e8e4d9' : '#1a1a2e')
 const subTextColor = computed(() => isDarkBackground.value ? '#a8a498' : '#4a5568')
 
+const renderToCanvas = (): HTMLCanvasElement | null => {
+  if (!previewRef.value) return null
+
+  const canvas = document.createElement('canvas')
+  const scale = 2
+  const rect = previewRef.value.getBoundingClientRect()
+  canvas.width = rect.width * scale
+  canvas.height = rect.height * scale
+  const ctx = canvas.getContext('2d')!
+  ctx.scale(scale, scale)
+
+  ctx.fillStyle = config.value.backgroundColor
+  ctx.fillRect(0, 0, rect.width, rect.height)
+
+  const pad = config.value.padding
+  const bw = config.value.borderWidth
+  if (bw > 0) {
+    ctx.strokeStyle = config.value.borderColor
+    ctx.lineWidth = bw
+    ctx.strokeRect(pad / 2, pad / 2, rect.width - pad, rect.height - pad)
+  }
+
+  const innerPad = pad + bw * 2
+
+  if (config.value.showTitle) {
+    const titleSize = config.value.layout === 'horizontal-scroll' ? 20 : 28
+    ctx.font = `${titleSize}px "Ma Shan Zheng", cursive`
+    ctx.fillStyle = textColor.value
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+
+    const titleY = config.value.titlePosition.startsWith('bottom')
+      ? rect.height - innerPad - 30
+      : innerPad + 8
+    ctx.fillText(props.composition.title || '无题', rect.width / 2, titleY)
+  }
+
+  const contentStartY = config.value.showTitle && !config.value.titlePosition.startsWith('bottom')
+    ? innerPad + 44
+    : innerPad + 8
+  const contentEndY = config.value.showTitle && config.value.titlePosition.startsWith('bottom')
+    ? rect.height - innerPad - 40
+    : rect.height - innerPad - 8
+
+  if (config.value.layout === 'horizontal-scroll') {
+    ctx.font = '16px "Noto Serif SC", serif'
+    ctx.fillStyle = textColor.value
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    let xPos = innerPad + 8
+    const yPos = (contentStartY + contentEndY) / 2 - 8
+    phraseLines.value.forEach((line, i) => {
+      const text = i < phraseLines.value.length - 1 ? line + '　' : line
+      ctx.fillText(text, xPos, yPos)
+      xPos += ctx.measureText(text).width
+    })
+  } else {
+    ctx.font = '18px "Noto Serif SC", serif'
+    ctx.fillStyle = textColor.value
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const lineH = 36
+    const totalH = phraseLines.value.length * lineH
+    let startY = contentStartY + (contentEndY - contentStartY - totalH) / 2 + lineH / 2
+    phraseLines.value.forEach((line) => {
+      ctx.fillText(line, rect.width / 2, startY)
+      startY += lineH
+    })
+  }
+
+  if (config.value.showScore) {
+    ctx.font = '12px "Noto Serif SC", serif'
+    ctx.fillStyle = subTextColor.value
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'bottom'
+    ctx.fillText(`${grade.value.grade} · ${props.composition.score.total}分`, rect.width - innerPad, rect.height - innerPad + 4)
+  }
+
+  config.value.seals.forEach(seal => {
+    const sx = (seal.position.x / 100) * rect.width
+    const sy = (seal.position.y / 100) * rect.height
+    ctx.save()
+    ctx.translate(sx, sy)
+    ctx.rotate((seal.rotation * Math.PI) / 180)
+    ctx.globalAlpha = seal.opacity
+
+    const halfSize = seal.size / 2
+    ctx.strokeStyle = seal.color
+    ctx.lineWidth = 1.5
+
+    if (seal.shape === 'square') {
+      ctx.strokeRect(-halfSize, -halfSize, seal.size, seal.size)
+    } else if (seal.shape === 'round') {
+      ctx.beginPath()
+      ctx.arc(0, 0, halfSize, 0, Math.PI * 2)
+      ctx.stroke()
+    } else {
+      ctx.beginPath()
+      ctx.ellipse(0, 0, halfSize, halfSize * 0.7, 0, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+
+    const charCount = seal.text.length
+    const fontSize = charCount <= 2 ? seal.size * 0.5 : seal.size * 0.35
+    ctx.font = `bold ${fontSize}px "Ma Shan Zheng", cursive`
+    ctx.fillStyle = seal.color
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    if (charCount <= 2) {
+      ctx.fillText(seal.text, 0, 0)
+    } else if (charCount <= 4) {
+      ctx.fillText(seal.text.substring(0, 2), 0, -fontSize * 0.55)
+      ctx.fillText(seal.text.substring(2), 0, fontSize * 0.55)
+    } else {
+      const mid = Math.ceil(charCount / 2)
+      ctx.fillText(seal.text.substring(0, mid), 0, -fontSize * 0.55)
+      ctx.fillText(seal.text.substring(mid), 0, fontSize * 0.55)
+    }
+
+    ctx.restore()
+  })
+
+  return canvas
+}
+
 const exportToCanvas = async () => {
   if (!previewRef.value) return
   isExporting.value = true
@@ -161,127 +287,8 @@ const exportToCanvas = async () => {
   try {
     await nextTick()
 
-    const canvas = document.createElement('canvas')
-    const scale = 2
-    const rect = previewRef.value.getBoundingClientRect()
-    canvas.width = rect.width * scale
-    canvas.height = rect.height * scale
-    const ctx = canvas.getContext('2d')!
-    ctx.scale(scale, scale)
-
-    ctx.fillStyle = config.value.backgroundColor
-    ctx.fillRect(0, 0, rect.width, rect.height)
-
-    const pad = config.value.padding
-    const bw = config.value.borderWidth
-    if (bw > 0) {
-      ctx.strokeStyle = config.value.borderColor
-      ctx.lineWidth = bw
-      ctx.strokeRect(pad / 2, pad / 2, rect.width - pad, rect.height - pad)
-    }
-
-    const innerPad = pad + bw * 2
-    const innerW = rect.width - innerPad * 2
-    const innerH = rect.height - innerPad * 2
-
-    if (config.value.showTitle) {
-      const titleSize = config.value.layout === 'horizontal-scroll' ? 20 : 28
-      ctx.font = `${titleSize}px "Ma Shan Zheng", cursive`
-      ctx.fillStyle = textColor.value
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'top'
-
-      const titleY = config.value.titlePosition.startsWith('bottom')
-        ? rect.height - innerPad - 30
-        : innerPad + 8
-      ctx.fillText(props.composition.title || '无题', rect.width / 2, titleY)
-    }
-
-    const contentStartY = config.value.showTitle && !config.value.titlePosition.startsWith('bottom')
-      ? innerPad + 44
-      : innerPad + 8
-    const contentEndY = config.value.showTitle && config.value.titlePosition.startsWith('bottom')
-      ? rect.height - innerPad - 40
-      : rect.height - innerPad - 8
-
-    if (config.value.layout === 'horizontal-scroll') {
-      ctx.font = '16px "Noto Serif SC", serif'
-      ctx.fillStyle = textColor.value
-      ctx.textAlign = 'left'
-      ctx.textBaseline = 'top'
-      let xPos = innerPad + 8
-      const yPos = (contentStartY + contentEndY) / 2 - 8
-      phraseLines.value.forEach((line, i) => {
-        const text = i < phraseLines.value.length - 1 ? line + '　' : line
-        ctx.fillText(text, xPos, yPos)
-        xPos += ctx.measureText(text).width
-      })
-    } else {
-      ctx.font = '18px "Noto Serif SC", serif'
-      ctx.fillStyle = textColor.value
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      const lineH = 36
-      const totalH = phraseLines.value.length * lineH
-      let startY = contentStartY + (contentEndY - contentStartY - totalH) / 2 + lineH / 2
-      phraseLines.value.forEach((line) => {
-        ctx.fillText(line, rect.width / 2, startY)
-        startY += lineH
-      })
-    }
-
-    if (config.value.showScore) {
-      ctx.font = '12px "Noto Serif SC", serif'
-      ctx.fillStyle = subTextColor.value
-      ctx.textAlign = 'right'
-      ctx.textBaseline = 'bottom'
-      ctx.fillText(`${grade.value.grade} · ${props.composition.score.total}分`, rect.width - innerPad, rect.height - innerPad + 4)
-    }
-
-    config.value.seals.forEach(seal => {
-      const sx = (seal.position.x / 100) * rect.width
-      const sy = (seal.position.y / 100) * rect.height
-      ctx.save()
-      ctx.translate(sx, sy)
-      ctx.rotate((seal.rotation * Math.PI) / 180)
-      ctx.globalAlpha = seal.opacity
-
-      const halfSize = seal.size / 2
-      ctx.strokeStyle = seal.color
-      ctx.lineWidth = 1.5
-
-      if (seal.shape === 'square') {
-        ctx.strokeRect(-halfSize, -halfSize, seal.size, seal.size)
-      } else if (seal.shape === 'round') {
-        ctx.beginPath()
-        ctx.arc(0, 0, halfSize, 0, Math.PI * 2)
-        ctx.stroke()
-      } else {
-        ctx.beginPath()
-        ctx.ellipse(0, 0, halfSize, halfSize * 0.7, 0, 0, Math.PI * 2)
-        ctx.stroke()
-      }
-
-      const charCount = seal.text.length
-      const fontSize = charCount <= 2 ? seal.size * 0.5 : seal.size * 0.35
-      ctx.font = `bold ${fontSize}px "Ma Shan Zheng", cursive`
-      ctx.fillStyle = seal.color
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-
-      if (charCount <= 2) {
-        ctx.fillText(seal.text, 0, 0)
-      } else if (charCount <= 4) {
-        ctx.fillText(seal.text.substring(0, 2), 0, -fontSize * 0.55)
-        ctx.fillText(seal.text.substring(2), 0, fontSize * 0.55)
-      } else {
-        const mid = Math.ceil(charCount / 2)
-        ctx.fillText(seal.text.substring(0, mid), 0, -fontSize * 0.55)
-        ctx.fillText(seal.text.substring(mid), 0, fontSize * 0.55)
-      }
-
-      ctx.restore()
-    })
+    const canvas = renderToCanvas()
+    if (!canvas) return
 
     const dataUrl = canvas.toDataURL('image/png')
     const link = document.createElement('a')
@@ -305,15 +312,8 @@ const shareViaWebShare = async () => {
   isExporting.value = true
 
   try {
-    const canvas = document.createElement('canvas')
-    const scale = 2
-    const rect = previewRef.value.getBoundingClientRect()
-    canvas.width = rect.width * scale
-    canvas.height = rect.height * scale
-    const ctx = canvas.getContext('2d')!
-    ctx.scale(scale, scale)
-    ctx.fillStyle = config.value.backgroundColor
-    ctx.fillRect(0, 0, rect.width, rect.height)
+    const canvas = renderToCanvas()
+    if (!canvas) return
 
     canvas.toBlob(async (blob) => {
       if (!blob) return
@@ -342,15 +342,8 @@ const copyToClipboard = async () => {
   isExporting.value = true
 
   try {
-    const canvas = document.createElement('canvas')
-    const scale = 2
-    const rect = previewRef.value.getBoundingClientRect()
-    canvas.width = rect.width * scale
-    canvas.height = rect.height * scale
-    const ctx = canvas.getContext('2d')!
-    ctx.scale(scale, scale)
-    ctx.fillStyle = config.value.backgroundColor
-    ctx.fillRect(0, 0, rect.width, rect.height)
+    const canvas = renderToCanvas()
+    if (!canvas) return
 
     canvas.toBlob(async (blob) => {
       if (!blob) return
