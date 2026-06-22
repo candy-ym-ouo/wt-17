@@ -1146,6 +1146,7 @@ export interface TrialBonusRule {
   label: string
   description: string
   bonus: number
+  multiplier?: number
   params: Record<string, any>
 }
 
@@ -1228,6 +1229,8 @@ export interface TrialSettlementResult {
   timeUsedSeconds: number
   triggeredBonuses: TrialBonusResult[]
   totalBonus: number
+  scoreMultiplier: number
+  scoreBeforeMultiplier: number
   finalScore: number
   earnedImageries: TrialRareImagery[]
   earnedTitles: TrialTitle[]
@@ -1242,6 +1245,7 @@ export interface TrialBonusResult {
   type: string
   label: string
   bonus: number
+  multiplier?: number
   description: string
 }
 

@@ -129,9 +129,10 @@ export const evaluateTrialBonusRules = (
   bonusRules: any[],
   timeUsedSeconds: number,
   requiredKeywords: string[]
-): { triggeredBonuses: TrialBonusResult[]; totalBonus: number } => {
+): { triggeredBonuses: TrialBonusResult[]; totalBonus: number; totalMultiplier: number } => {
   const triggeredBonuses: TrialBonusResult[] = []
   let totalBonus = 0
+  let totalMultiplier = 1.0
   
   const phraseTexts = new Set(phrases.map(p => p.text))
   const categories = new Set(phrases.map(p => p.category))
@@ -178,17 +179,22 @@ export const evaluateTrialBonusRules = (
     }
     
     if (triggered) {
+      const multiplier = rule.multiplier
       triggeredBonuses.push({
         type: rule.type,
         label: rule.label,
         bonus: rule.bonus,
+        multiplier: multiplier,
         description: rule.description
       })
       totalBonus += rule.bonus
+      if (multiplier && multiplier > 1) {
+        totalMultiplier *= multiplier
+      }
     }
   })
   
-  return { triggeredBonuses, totalBonus }
+  return { triggeredBonuses, totalBonus, totalMultiplier }
 }
 
 const rollRareImageries = (pool: TrialRareImagery[], count: number): TrialRareImagery[] => {
@@ -332,14 +338,42 @@ export const settleTrial = (
   
   const baseScore = calculateScore(phrases, fakeChapter, {})
   
-  const { triggeredBonuses, totalBonus } = evaluateTrialBonusRules(
+  const { triggeredBonuses, totalBonus, totalMultiplier: bonusMultiplier } = evaluateTrialBonusRules(
     phrases,
     theme.bonusRules,
     timeUsedSeconds,
     theme.requiredKeywords
   )
   
-  const finalScore = Math.min(100, baseScore.total + totalBonus)
+  const scoreBeforeMultiplier = baseScore.total + totalBonus
+  
+  let settlementMultiplier = 1.0
+  const multiplierRules: TrialBonusResult[] = []
+  
+  const tempScore = Math.min(100, scoreBeforeMultiplier)
+  if (tempScore >= theme.requiredScore) {
+    const eligibleSettlement = theme.settlementRules.filter(rule => tempScore >= rule.minScore)
+    
+    eligibleSettlement.forEach(rule => {
+      if (rule.type === 'score_multiplier') {
+        const mult = rule.params.multiplier || 1.0
+        if (mult > 1) {
+          settlementMultiplier *= mult
+          multiplierRules.push({
+            type: 'score_multiplier',
+            label: rule.description,
+            bonus: 0,
+            multiplier: mult,
+            description: `积分倍率 ×${mult}`
+          })
+        }
+      }
+    })
+  }
+  
+  const finalMultiplier = bonusMultiplier * settlementMultiplier
+  const scoreAfterMultiplier = scoreBeforeMultiplier * finalMultiplier
+  const finalScore = Math.min(100, Math.round(scoreAfterMultiplier * 10) / 10)
   const scoreGrade = getScoreGrade(finalScore)
   const stars = getStars(finalScore)
   
@@ -348,6 +382,8 @@ export const settleTrial = (
   const state = loadTrialState()
   const isFirstClear = !state.clearedThemes.includes(themeId)
   const isNewRecord = !state.bestScores[themeId] || finalScore > state.bestScores[themeId]
+  
+  const allTriggeredBonuses = [...triggeredBonuses, ...multiplierRules]
   
   let earnedImageries: TrialRareImagery[] = []
   let earnedTitles: TrialTitle[] = []
@@ -413,8 +449,10 @@ export const settleTrial = (
     score: baseScore.total,
     scoreGrade,
     timeUsedSeconds,
-    triggeredBonuses,
+    triggeredBonuses: allTriggeredBonuses,
     totalBonus,
+    scoreMultiplier: finalMultiplier,
+    scoreBeforeMultiplier,
     finalScore,
     earnedImageries,
     earnedTitles,

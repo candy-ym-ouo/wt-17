@@ -113,9 +113,23 @@ const hasRewards = computed(() => {
           <span class="breakdown-label">基础得分</span>
           <span class="breakdown-value">{{ Math.round(result.score) }}</span>
         </div>
-        <div v-for="bonus in result.triggeredBonuses" :key="bonus.type" class="breakdown-item bonus">
-          <span class="breakdown-label">{{ bonus.label }}</span>
-          <span class="breakdown-value">+{{ bonus.bonus }}</span>
+        <template v-for="bonus in result.triggeredBonuses" :key="bonus.type">
+          <div v-if="bonus.bonus > 0" class="breakdown-item bonus">
+            <span class="breakdown-label">{{ bonus.label }}</span>
+            <span class="breakdown-value">+{{ bonus.bonus }}</span>
+          </div>
+          <div v-if="bonus.multiplier && bonus.multiplier > 1" class="breakdown-item multiplier">
+            <span class="breakdown-label">{{ bonus.label }}</span>
+            <span class="breakdown-value">×{{ bonus.multiplier.toFixed(2) }}</span>
+          </div>
+        </template>
+        <div v-if="result.scoreMultiplier > 1" class="breakdown-item before-multiplier">
+          <span class="breakdown-label">倍率前得分</span>
+          <span class="breakdown-value">{{ Math.round(result.scoreBeforeMultiplier) }}</span>
+        </div>
+        <div v-if="result.scoreMultiplier > 1" class="breakdown-item total-multiplier">
+          <span class="breakdown-label">总积分倍率</span>
+          <span class="breakdown-value">×{{ result.scoreMultiplier.toFixed(2) }}</span>
         </div>
         <div class="breakdown-item total">
           <span class="breakdown-label">最终得分</span>
@@ -379,6 +393,34 @@ const hasRewards = computed(() => {
 
 .breakdown-item.bonus .breakdown-value {
   color: #7ca97c;
+}
+
+.breakdown-item.multiplier .breakdown-value {
+  color: #f5a623;
+  font-weight: 700;
+}
+
+.breakdown-item.before-multiplier {
+  opacity: 0.7;
+}
+
+.breakdown-item.total-multiplier {
+  background: rgba(245, 166, 35, 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 4px 0;
+}
+
+.breakdown-item.total-multiplier .breakdown-label {
+  color: #f5a623;
+  font-weight: 600;
+}
+
+.breakdown-item.total-multiplier .breakdown-value {
+  color: #f5a623;
+  font-size: 18px;
+  font-weight: 800;
+  text-shadow: 0 0 10px rgba(245, 166, 35, 0.4);
 }
 
 .breakdown-item.total {

@@ -20,6 +20,7 @@ const createBonusRules = (theme: string): TrialBonusRule[] => [
     label: '下笔神速',
     description: '在时间限制内快速完成',
     bonus: 12,
+    multiplier: 1.1,
     params: { timeThreshold: 120 }
   },
   {
@@ -34,6 +35,7 @@ const createBonusRules = (theme: string): TrialBonusRule[] => [
     label: '情景交融',
     description: '景物与情感完美融合',
     bonus: 10,
+    multiplier: 1.05,
     params: {}
   },
   {
@@ -41,6 +43,7 @@ const createBonusRules = (theme: string): TrialBonusRule[] => [
     label: '天衣无缝',
     description: '所有关键词全部命中',
     bonus: 15,
+    multiplier: 1.2,
     params: {}
   }
 ]
@@ -53,28 +56,46 @@ const createSettlementRules = (): TrialSettlementRule[] => [
     minScore: 60
   },
   {
-    type: 'title_award',
-    params: { minScore: 80 },
-    description: '获得试炼称号',
-    minScore: 80
-  },
-  {
-    type: 'score_multiplier',
-    params: { multiplier: 1.5 },
-    description: '积分倍率提升',
-    minScore: 90
-  },
-  {
     type: 'phrase_unlock',
     params: { count: 2 },
     description: '解锁新词句',
     minScore: 70
   },
   {
+    type: 'score_multiplier',
+    params: { multiplier: 1.15 },
+    description: '佳作加成',
+    minScore: 75
+  },
+  {
+    type: 'title_award',
+    params: { minScore: 80 },
+    description: '获得试炼称号',
+    minScore: 80
+  },
+  {
     type: 'spectra_unlock',
     params: { rarity: 'epic' },
     description: '获得墨韵谱面',
     minScore: 85
+  },
+  {
+    type: 'score_multiplier',
+    params: { multiplier: 1.3 },
+    description: '妙品加成',
+    minScore: 85
+  },
+  {
+    type: 'score_multiplier',
+    params: { multiplier: 1.5 },
+    description: '神品加成',
+    minScore: 90
+  },
+  {
+    type: 'score_multiplier',
+    params: { multiplier: 1.2 },
+    description: '传世之作',
+    minScore: 95
   }
 ]
 
