@@ -31,6 +31,7 @@ const emit = defineEmits<{
   (e: 'openCipaiWorkshop'): void
   (e: 'openTravelMap'): void
   (e: 'openAchievements'): void
+  (e: 'openImpromptu'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save'): void
@@ -135,6 +136,9 @@ const emit = defineEmits<{
       <button class="icon-btn achievement-btn" @click="emit('openAchievements')" title="成就收集">
         🏆
         <span v-if="achievementCount > 0" class="achievement-badge">{{ achievementCount }}/{{ totalAchievementCount }}</span>
+      </button>
+      <button class="icon-btn impromptu-btn" @click="emit('openImpromptu')" title="临场命题">
+        🎯
       </button>
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺
@@ -417,6 +421,10 @@ const emit = defineEmits<{
 
 .achievement-btn:hover {
   color: #c9a86c;
+}
+
+.impromptu-btn:hover {
+  color: #d4a574;
 }
 
 .achievement-badge {

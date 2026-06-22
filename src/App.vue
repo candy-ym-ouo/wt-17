@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, CompositionVersion, MapNode, StoryEvent as StoryEventType, Achievement, AchievementProgress, TravelMapState } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, CompositionVersion, MapNode, StoryEvent as StoryEventType, Achievement, AchievementProgress, TravelMapState, ImpromptuTopic, ImpromptuTopicState } from '@/types'
 import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
@@ -43,6 +43,7 @@ import { getCipaiById, getCipaiScoringRuleByMode, cipaiTemplates } from '@/data/
 import { sortPhrasesForCipai, getCipaiProgress, getNextLineHint, getCipaiScoreForPhrases } from '@/utils/cipaiWorkshop'
 import type { CipaiTemplate, CipaiScoringMode, CipaiScoreBreakdown } from '@/types'
 import { mapNodes, storyEvents, achievements, getStoryEventById, getMapNodeById, getAchievementById } from '@/data/travelMap'
+import { loadImpromptuState, saveImpromptuResult, determineImpromptuRewardTier, claimImpromptuReward, isImpromptuRewardClaimed, getImpromptuCompletedCount } from '@/utils/impromptuTopic'
 
 import TopHeader from '@/components/TopHeader.vue'
 import PhrasePool from '@/components/PhrasePool.vue'
@@ -67,6 +68,7 @@ import VersionCompare from '@/components/VersionCompare.vue'
 import TravelMap from '@/components/TravelMap.vue'
 import StoryEvent from '@/components/StoryEvent.vue'
 import AchievementPanel from '@/components/AchievementPanel.vue'
+import ImpromptuTopicPanel from '@/components/ImpromptuTopicPanel.vue'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -152,6 +154,9 @@ const showStoryEvent = ref(false)
 const currentStoryEvent = ref<StoryEventType | null>(null)
 const travelMapState = ref<TravelMapState>(loadTravelMapState())
 const achievementProgress = ref<AchievementProgress[]>(loadAchievementProgress())
+
+const showImpromptuPanel = ref(false)
+const impromptuState = ref<ImpromptuTopicState>(loadImpromptuState())
 
 let autoSaveTimer: number | null = null
 
@@ -1430,6 +1435,55 @@ const handleCloseAchievementPanel = () => {
   }
 }
 
+const handleClaimImpromptuReward = (topicId: string, tier: string, rewards: ImpromptuTopic['rewards'][0]['rewards']) => {
+  rewards.forEach(item => {
+    switch (item.type) {
+      case 'phrase_unlock': {
+        const texts = item.params.phraseTexts as string[]
+        texts.forEach(text => {
+          const phrase = createRewardPhrase(text)
+          if (phrase) {
+            addChapterRewardPhrase('ch1', phrase)
+            collectPhrase(text, undefined, `impromptu_${topicId}`)
+          }
+        })
+        break
+      }
+      case 'phrase_pool_refresh': {
+        const targetChapterId = item.params.chapterId as string
+        const category = item.params.addCategory as PhraseCategory
+        const count = item.params.count as number
+        const refreshed = refreshPoolByCategory(category, count)
+        if (targetChapterId === '__all__') {
+          chapters.forEach(ch => {
+            refreshed.forEach(p => {
+              addChapterRewardPhrase(ch.id, { ...p, id: `${p.id}_${ch.id}` })
+            })
+          })
+        } else {
+          refreshed.forEach(p => {
+            addChapterRewardPhrase(targetChapterId, p)
+          })
+        }
+        break
+      }
+      case 'score_weight_boost': {
+        addWeightBoost(item.params.dimension as string, item.params.boost as number)
+        break
+      }
+      case 'title_reward': {
+        addEarnedTitle(item.params.title as string)
+        break
+      }
+    }
+  })
+
+  claimImpromptuReward(topicId, tier)
+  impromptuState.value = loadImpromptuState()
+  questState.value = loadQuestState()
+  musicPlayer.playSuccessSound()
+}
+
 const handleClaimReward = (questId: string) => {
   const quest = getQuestById(questId)
   if (!quest || questState.value.claimedRewards.includes(questId)) return
@@ -1854,6 +1908,7 @@ watch(currentChapterId, (newId) => {
       @openCipaiWorkshop="showCipaiWorkshop = true"
       @openTravelMap="showTravelMap = true"
       @openAchievements="showAchievementPanel = true"
+      @openImpromptu="showImpromptuPanel = true"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -2211,6 +2266,12 @@ watch(currentChapterId, (newId) => {
       :achievementProgress="achievementProgress"
       :questState="questState"
       @close="handleCloseAchievementPanel"
+    />
+
+    <ImpromptuTopicPanel
+      :visible="showImpromptuPanel"
+      @close="showImpromptuPanel = false"
+      @claimReward="handleClaimImpromptuReward"
     />
     
     <div class="bg-decoration">

@@ -888,3 +888,99 @@ export const ACHIEVEMENT_CATEGORY_LABELS: Record<AchievementCategory, string> = 
   streak: '连胜',
   exploration: '探索'
 }
+
+export type TimePeriod = 'dawn' | 'morning' | 'noon' | 'afternoon' | 'dusk' | 'evening' | 'midnight'
+
+export const TIME_PERIOD_LABELS: Record<TimePeriod, string> = {
+  dawn: '黎明',
+  morning: '晨间',
+  noon: '正午',
+  afternoon: '午后',
+  dusk: '黄昏',
+  evening: '夜幕',
+  midnight: '子夜'
+}
+
+export const TIME_PERIOD_ICONS: Record<TimePeriod, string> = {
+  dawn: '🌅',
+  morning: '🌤️',
+  noon: '☀️',
+  afternoon: '🌇',
+  dusk: '🌆',
+  evening: '🌙',
+  midnight: '🌌'
+}
+
+export interface ImpromptuTopicTheme {
+  id: string
+  name: string
+  description: string
+  icon: string
+  accentColor: string
+  periodAffinity: TimePeriod[]
+  keywords: string[]
+  categoryWeights: Partial<Record<PhraseCategory, number>>
+  scoringPreference: Partial<ScoreWeights>
+  themeMatchBonus: number
+  preferredCategories: PhraseCategory[]
+  forbiddenWords?: string[]
+  requiredKeywords?: string[]
+}
+
+export interface ImpromptuTopic {
+  id: string
+  themeId: string
+  period: TimePeriod
+  title: string
+  subtitle: string
+  description: string
+  accentColor: string
+  timeLimitSeconds: number
+  targetPhraseCount: number
+  requiredKeywords: string[]
+  forbiddenWords: string[]
+  bonusRules: ImpromptuTopicBonusRule[]
+  rewards: ImpromptuTopicReward[]
+  poolRefresh: {
+    addKeywords: string[]
+    addCategory: PhraseCategory
+    addCount: number
+  }
+}
+
+export interface ImpromptuTopicBonusRule {
+  type: 'keyword_combo' | 'category_balance' | 'speed_bonus' | 'rare_phrase' | 'period_match'
+  label: string
+  description: string
+  bonus: number
+  params: Record<string, any>
+}
+
+export interface ImpromptuTopicReward {
+  tier: 'bronze' | 'silver' | 'gold'
+  minScore: number
+  rewards: ImpromptuTopicRewardItem[]
+}
+
+export interface ImpromptuTopicRewardItem {
+  type: 'phrase_unlock' | 'title_reward' | 'score_weight_boost' | 'phrase_pool_refresh'
+  params: Record<string, any>
+}
+
+export interface ImpromptuTopicResult {
+  topicId: string
+  compositionId: string
+  score: number
+  timeUsedSeconds: number
+  completedAt: number
+  bonusAdjustment: number
+  triggeredBonuses: string[]
+  rewardTier: string | null
+}
+
+export interface ImpromptuTopicState {
+  completedTopics: string[]
+  topicResults: Record<string, ImpromptuTopicResult[]>
+  claimedRewards: Record<string, string[]>
+  totalCompleted: number
+}

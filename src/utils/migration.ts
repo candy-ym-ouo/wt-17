@@ -31,6 +31,7 @@ export type StorageDataType =
   | 'reviewState'
   | 'achievementProgress'
   | 'travelMapState'
+  | 'impromptuTopicState'
 
 export interface VersionedData<T> {
   _schemaVersion: number
@@ -424,6 +425,7 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
       },
     },
   ],
+  impromptuTopicState: [],
 }
 
 function fillSourceGaps(source: PhraseSource | undefined | null, chapterId: string): PhraseSource {
@@ -657,6 +659,7 @@ export function getMigrationStatus(): Record<StorageDataType, { current: number;
     reviewState: 'poem_slices_mentor_reviews',
     achievementProgress: 'poem_slices_achievement_progress',
     travelMapState: 'poem_slices_travel_map_state',
+    impromptuTopicState: 'poem_slices_impromptu_topic_state',
   }
 
   const types: StorageDataType[] = [
