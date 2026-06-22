@@ -1,6 +1,7 @@
-import type { JieqiState, JieqiType, Composition, Phrase } from '@/types'
+import type { JieqiState, JieqiType, Composition, Phrase, JieqiQuest, QuestCondition } from '@/types'
 import { wrapWithVersion, unwrapVersionedData, needsMigration, migrateData } from '@/utils/migration'
-import { jieqiList, getJieqiById, getJieqiChapter, isJieqiUnlocked } from '@/data/jieqi'
+import { jieqiList, getJieqiById, getJieqiChapter, isJieqiUnlocked, jieqiQuests, getJieqiQuests, jieqiPhrases } from '@/data/jieqi'
+import { loadCompositions } from '@/utils/storage'
 
 const STORAGE_KEY = 'poem_slices_jieqi_state'
 
@@ -218,6 +219,202 @@ export const getTotalJieqiProgress = (): { completed: number; total: number; per
   
   return {
     completed,
+    total,
+    percentage: total > 0 ? Math.round((completed / total) * 100) : 0
+  }
+}
+
+const checkQuestCondition = (
+  condition: QuestCondition,
+  compositions: Composition[],
+  state: JieqiState
+): boolean => {
+  const { type, params } = condition
+  
+  switch (type) {
+    case 'score_threshold': {
+      const chapterId = params.chapterId
+      const minScore = params.minScore || 0
+      const chapterComps = compositions.filter(c => c.chapterId === chapterId)
+      if (chapterComps.length === 0) return false
+      const maxScore = Math.max(...chapterComps.map(c => c.score.total))
+      return maxScore >= minScore
+    }
+    case 'chapter_count': {
+      const minCount = params.minCount || 0
+      const completedCount = Object.keys(state.completedChapters).filter(
+        id => state.completedChapters[id]
+      ).length
+      return completedCount >= minCount
+    }
+    case 'composition_count': {
+      const minCount = params.minCount || 0
+      const jieqiId = params.jieqiId
+      let comps = compositions
+      if (jieqiId) {
+        const chapterId = `jq_${jieqiId}`
+        comps = compositions.filter(c => c.chapterId === chapterId)
+      }
+      return comps.length >= minCount
+    }
+    case 'phrase_collection_count': {
+      const minCount = params.minCount || 0
+      return state.collectedPhrases.length >= minCount
+    }
+    default:
+      return false
+  }
+}
+
+const checkAllConditions = (
+  conditions: QuestCondition[],
+  compositions: Composition[],
+  state: JieqiState
+): boolean => {
+  if (conditions.length === 0) return true
+  return conditions.every(cond => checkQuestCondition(cond, compositions, state))
+}
+
+export const isJieqiQuestUnlocked = (questId: string): boolean => {
+  const state = loadJieqiState()
+  const compositions = loadCompositions()
+  const quest = jieqiQuests.find(q => q.id === questId)
+  if (!quest) return false
+  return checkAllConditions(quest.unlockConditions, compositions, state)
+}
+
+export const isJieqiQuestCompleted = (questId: string): boolean => {
+  const state = loadJieqiState()
+  const compositions = loadCompositions()
+  const quest = jieqiQuests.find(q => q.id === questId)
+  if (!quest) return false
+  
+  if (!checkAllConditions(quest.unlockConditions, compositions, state)) return false
+  
+  return checkAllConditions(quest.completeConditions, compositions, state)
+}
+
+export const isJieqiQuestRewardClaimed = (questId: string): boolean => {
+  const state = loadJieqiState()
+  return state.claimedRewards[questId] || false
+}
+
+export const getJieqiQuestStatus = (questId: string): 'locked' | 'unlocked' | 'completed' | 'claimed' => {
+  const state = loadJieqiState()
+  
+  if (state.claimedRewards[questId]) return 'claimed'
+  if (isJieqiQuestCompleted(questId)) return 'completed'
+  if (isJieqiQuestUnlocked(questId)) return 'unlocked'
+  return 'locked'
+}
+
+export const claimJieqiQuestReward = (questId: string): { success: boolean; rewards: string[] } => {
+  const state = loadJieqiState()
+  const quest = jieqiQuests.find(q => q.id === questId)
+  
+  if (!quest) return { success: false, rewards: [] }
+  if (state.claimedRewards[questId]) return { success: false, rewards: [] }
+  if (!isJieqiQuestCompleted(questId)) return { success: false, rewards: [] }
+  
+  const claimedRewards: string[] = []
+  
+  quest.rewards.forEach(reward => {
+    switch (reward.type) {
+      case 'phrase_unlock': {
+        const phraseTexts = reward.params.phraseTexts || []
+        phraseTexts.forEach((text: string) => {
+          if (!state.collectedPhrases.includes(text)) {
+            state.collectedPhrases.push(text)
+            claimedRewards.push(`解锁限定词：${text}`)
+          }
+        })
+        break
+      }
+      case 'title_reward': {
+        const title = reward.params.title
+        if (title && !state.earnedTitles.includes(title)) {
+          state.earnedTitles.push(title)
+          claimedRewards.push(`获得称号：${title}`)
+        }
+        break
+      }
+    }
+  })
+  
+  state.claimedRewards[questId] = true
+  saveJieqiState(state)
+  
+  return { success: true, rewards: claimedRewards }
+}
+
+export const isJieqiPhraseUnlocked = (phraseText: string, jieqiId?: JieqiType): boolean => {
+  const state = loadJieqiState()
+  
+  const phrase = jieqiPhrases.find(p => p.text === phraseText)
+  if (!phrase) return false
+  
+  if (!phrase.isExclusive) return true
+  
+  if (jieqiId && phrase.jieqiId !== jieqiId) return false
+  
+  return state.collectedPhrases.includes(phraseText)
+}
+
+export const getUnlockedJieqiPhrases = (jieqiId: JieqiType): string[] => {
+  const state = loadJieqiState()
+  const jieqiPhraseList = jieqiPhrases.filter(p => p.jieqiId === jieqiId)
+  
+  return jieqiPhraseList
+    .filter(phrase => {
+      if (!phrase.isExclusive) return true
+      return state.collectedPhrases.includes(phrase.text)
+    })
+    .map(p => p.text)
+}
+
+export const checkAndCompleteJieqiQuests = (jieqiId?: JieqiType): string[] => {
+  const state = loadJieqiState()
+  const compositions = loadCompositions()
+  const newlyCompleted: string[] = []
+  
+  let questsToCheck = jieqiQuests
+  if (jieqiId) {
+    questsToCheck = jieqiQuests.filter(q => q.jieqiId === jieqiId)
+  }
+  
+  questsToCheck.forEach(quest => {
+    if (state.claimedRewards[quest.id]) return
+    
+    const wasUnlocked = checkAllConditions(quest.unlockConditions, compositions, state)
+    if (!wasUnlocked) return
+    
+    const isCompleted = checkAllConditions(quest.completeConditions, compositions, state)
+    if (isCompleted) {
+      newlyCompleted.push(quest.id)
+    }
+  })
+  
+  return newlyCompleted
+}
+
+export const getJieqiQuestProgress = (jieqiId: JieqiType): { completed: number; total: number; percentage: number; claimed: number } => {
+  const state = loadJieqiState()
+  const compositions = loadCompositions()
+  const quests = getJieqiQuests(jieqiId)
+  
+  let completed = 0
+  let claimed = 0
+  const total = quests.length
+  
+  quests.forEach(quest => {
+    const status = getJieqiQuestStatus(quest.id)
+    if (status === 'completed' || status === 'claimed') completed++
+    if (status === 'claimed') claimed++
+  })
+  
+  return {
+    completed,
+    claimed,
     total,
     percentage: total > 0 ? Math.round((completed / total) * 100) : 0
   }

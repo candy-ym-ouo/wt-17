@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import type { JieqiInfo, JieqiSeason, JieqiState, JieqiChapter, Composition } from '@/types'
-import { jieqiList, getCurrentJieqi, getJieqiChapter, getJieqiQuests, isJieqiUnlocked } from '@/data/jieqi'
-import { loadJieqiState, refreshJieqiUnlocks, getJieqiBestScore, completeJieqiChapter, isJieqiChapterCompleted } from '@/utils/jieqi'
+import { ref, computed, onMounted, watch } from 'vue'
+import type { JieqiInfo, JieqiSeason, JieqiState, JieqiChapter, Composition, JieqiPhrase, JieqiQuest } from '@/types'
+import { jieqiList, getCurrentJieqi, getJieqiChapter, getJieqiQuests, isJieqiUnlocked, getJieqiPhrases } from '@/data/jieqi'
+import { 
+  loadJieqiState, 
+  refreshJieqiUnlocks, 
+  getJieqiBestScore, 
+  completeJieqiChapter, 
+  isJieqiChapterCompleted,
+  getJieqiQuestStatus,
+  claimJieqiQuestReward,
+  isJieqiPhraseUnlocked
+} from '@/utils/jieqi'
 import { JIEQI_SEASON_LABELS, JIEQI_SEASON_COLORS } from '@/types'
 
 const props = defineProps<{
@@ -19,6 +28,8 @@ const jieqiState = ref<JieqiState>(loadJieqiState())
 const selectedSeason = ref<JieqiSeason>('春')
 const selectedJieqi = ref<JieqiInfo | null>(null)
 const showDetail = ref(false)
+const activeTab = ref<'chapter' | 'quests' | 'phrases'>('chapter')
+const claimMessage = ref<string>('')
 
 const seasons: JieqiSeason[] = ['春', '夏', '秋', '冬']
 
@@ -35,9 +46,14 @@ const selectedJieqiChapter = computed((): JieqiChapter | null => {
   return getJieqiChapter(`jq_${selectedJieqi.value.id}`) || null
 })
 
-const selectedJieqiQuests = computed(() => {
+const selectedJieqiQuests = computed<JieqiQuest[]>(() => {
   if (!selectedJieqi.value) return []
   return getJieqiQuests(selectedJieqi.value.id)
+})
+
+const selectedJieqiPhrases = computed<JieqiPhrase[]>(() => {
+  if (!selectedJieqi.value) return []
+  return getJieqiPhrases(selectedJieqi.value.id)
 })
 
 const selectedJieqiBestScore = computed(() => {
@@ -52,6 +68,31 @@ const selectedJieqiCompleted = computed(() => {
   return isJieqiChapterCompleted(chapterId)
 })
 
+const questProgress = computed(() => {
+  if (!selectedJieqi.value) return { completed: 0, total: 0, percentage: 0 }
+  const quests = selectedJieqiQuests.value
+  const completed = quests.filter(q => {
+    const status = getJieqiQuestStatus(q.id)
+    return status === 'completed' || status === 'claimed'
+  }).length
+  return {
+    completed,
+    total: quests.length,
+    percentage: quests.length > 0 ? Math.round((completed / quests.length) * 100) : 0
+  }
+})
+
+const phraseProgress = computed(() => {
+  if (!selectedJieqi.value) return { unlocked: 0, total: 0, percentage: 0 }
+  const phrases = selectedJieqiPhrases.value
+  const unlocked = phrases.filter(p => isJieqiPhraseUnlocked(p.text, selectedJieqi.value!.id)).length
+  return {
+    unlocked,
+    total: phrases.length,
+    percentage: phrases.length > 0 ? Math.round((unlocked / phrases.length) * 100) : 0
+  }
+})
+
 const totalProgress = computed(() => {
   const total = jieqiList.length
   const completed = Object.keys(jieqiState.value.completedChapters).filter(
@@ -64,16 +105,23 @@ const totalProgress = computed(() => {
   }
 })
 
+const refreshState = () => {
+  jieqiState.value = loadJieqiState()
+}
+
 const handleSelectSeason = (season: JieqiSeason) => {
   selectedSeason.value = season
   showDetail.value = false
   selectedJieqi.value = null
+  activeTab.value = 'chapter'
 }
 
 const handleSelectJieqi = (jieqi: JieqiInfo) => {
   if (!isJieqiUnlocked(jieqi.id)) return
   selectedJieqi.value = jieqi
   showDetail.value = true
+  activeTab.value = 'chapter'
+  claimMessage.value = ''
 }
 
 const handleStartChapter = () => {
@@ -82,9 +130,31 @@ const handleStartChapter = () => {
   emit('startChapter', selectedJieqiChapter.value.id, selectedJieqi.value.id)
 }
 
+const handleClaimReward = (questId: string) => {
+  const result = claimJieqiQuestReward(questId)
+  if (result.success) {
+    claimMessage.value = result.rewards.join('、')
+    refreshState()
+    setTimeout(() => {
+      claimMessage.value = ''
+    }, 3000)
+  }
+}
+
+const getQuestStatus = (questId: string) => {
+  return getJieqiQuestStatus(questId)
+}
+
+const getPhraseUnlocked = (phraseText: string) => {
+  if (!selectedJieqi.value) return false
+  return isJieqiPhraseUnlocked(phraseText, selectedJieqi.value.id)
+}
+
 const handleBack = () => {
   showDetail.value = false
   selectedJieqi.value = null
+  activeTab.value = 'chapter'
+  claimMessage.value = ''
 }
 
 const getJieqiStatus = (jieqi: JieqiInfo): 'locked' | 'unlocked' | 'completed' => {
@@ -205,72 +275,181 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="jieqi-detail-content">
-            <div class="jieqi-description">
-              <p>{{ selectedJieqi?.description }}</p>
-            </div>
+          <div class="detail-tabs">
+            <button 
+              class="detail-tab" 
+              :class="{ active: activeTab === 'chapter' }"
+              @click="activeTab = 'chapter'"
+            >
+              限定章节
+            </button>
+            <button 
+              class="detail-tab" 
+              :class="{ active: activeTab === 'quests' }"
+              @click="activeTab = 'quests'"
+            >
+              任务链
+              <span v-if="questProgress.completed > 0" class="tab-badge">
+                {{ questProgress.completed }}/{{ questProgress.total }}
+              </span>
+            </button>
+            <button 
+              class="detail-tab" 
+              :class="{ active: activeTab === 'phrases' }"
+              @click="activeTab = 'phrases'"
+            >
+              限定词库
+              <span v-if="phraseProgress.unlocked > 0" class="tab-badge">
+                {{ phraseProgress.unlocked }}/{{ phraseProgress.total }}
+              </span>
+            </button>
+          </div>
 
-            <div v-if="selectedJieqiChapter" class="jieqi-chapter-section">
-              <h4 class="section-title">限定章节</h4>
-              <div class="chapter-card">
-                <div class="chapter-info">
-                  <div>
-                    <h5 class="chapter-title">{{ selectedJieqiChapter.title }}</h5>
-                    <p class="chapter-subtitle">{{ selectedJieqiChapter.subtitle }}</p>
+          <div class="jieqi-detail-content">
+            <div v-if="activeTab === 'chapter'" class="tab-content">
+              <div v-if="selectedJieqiChapter" class="jieqi-chapter-section">
+                <div class="chapter-card">
+                  <div class="chapter-info">
+                    <div>
+                      <h5 class="chapter-title">{{ selectedJieqiChapter.title }}</h5>
+                      <p class="chapter-subtitle">{{ selectedJieqiChapter.subtitle }}</p>
+                    </div>
+                    <div class="chapter-difficulty" :class="selectedJieqiChapter.difficulty">
+                      {{ selectedJieqiChapter.difficulty === 'easy' ? '简单' : selectedJieqiChapter.difficulty === 'medium' ? '中等' : '困难' }}
+                    </div>
                   </div>
-                  <div class="chapter-difficulty" :class="selectedJieqiChapter.difficulty">
-                    {{ selectedJieqiChapter.difficulty === 'easy' ? '简单' : selectedJieqiChapter.difficulty === 'medium' ? '中等' : '困难' }}
+                  <p class="chapter-desc">{{ selectedJieqiChapter.description }}</p>
+                  <div class="chapter-stats">
+                    <div class="stat-item">
+                      <span class="stat-label">目标词句</span>
+                      <span class="stat-value">{{ selectedJieqiChapter.targetPhraseCount }}</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">最佳分数</span>
+                      <span class="stat-value">{{ selectedJieqiBestScore }}</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">状态</span>
+                      <span class="stat-value" :class="{ completed: selectedJieqiCompleted }">
+                        {{ selectedJieqiCompleted ? '已完成' : '未完成' }}
+                      </span>
+                    </div>
                   </div>
+                  <button 
+                    class="start-chapter-btn"
+                    :style="{ '--btn-color': selectedJieqi?.accentColor }"
+                    @click="handleStartChapter"
+                  >
+                    {{ selectedJieqiCompleted ? '再次挑战' : '开始创作' }}
+                  </button>
                 </div>
-                <p class="chapter-desc">{{ selectedJieqiChapter.description }}</p>
-                <div class="chapter-stats">
-                  <div class="stat-item">
-                    <span class="stat-label">目标词句</span>
-                    <span class="stat-value">{{ selectedJieqiChapter.targetPhraseCount }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <span class="stat-label">最佳分数</span>
-                    <span class="stat-value">{{ selectedJieqiBestScore }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <span class="stat-label">状态</span>
-                    <span class="stat-value" :class="{ completed: selectedJieqiCompleted }">
-                      {{ selectedJieqiCompleted ? '已完成' : '未完成' }}
-                    </span>
-                  </div>
+              </div>
+
+              <div class="jieqi-hint-section">
+                <h4 class="section-title">创作提示</h4>
+                <div class="hint-card">
+                  <p class="hint-text">{{ selectedJieqiChapter?.hint }}</p>
                 </div>
-                <button 
-                  class="start-chapter-btn"
-                  :style="{ '--btn-color': selectedJieqi?.accentColor }"
-                  @click="handleStartChapter"
-                >
-                  {{ selectedJieqiCompleted ? '再次挑战' : '开始创作' }}
-                </button>
               </div>
             </div>
 
-            <div v-if="selectedJieqiQuests.length > 0" class="jieqi-quests-section">
-              <h4 class="section-title">任务链</h4>
-              <div class="quest-list">
+            <div v-if="activeTab === 'quests'" class="tab-content">
+              <div v-if="claimMessage" class="claim-success">
+                <span class="claim-icon">🎉</span>
+                <span class="claim-text">{{ claimMessage }}</span>
+              </div>
+              
+              <div v-if="selectedJieqiQuests.length === 0" class="empty-state">
+                <span class="empty-icon">📋</span>
+                <span class="empty-text">暂无任务</span>
+              </div>
+              
+              <div v-else class="quest-list">
                 <div
                   v-for="(quest, index) in selectedJieqiQuests"
                   :key="quest.id"
                   class="quest-item"
+                  :class="getQuestStatus(quest.id)"
                 >
                   <div class="quest-icon">{{ quest.icon }}</div>
                   <div class="quest-info">
                     <h5 class="quest-title">{{ quest.title }}</h5>
                     <p class="quest-desc">{{ quest.description }}</p>
+                    <div class="quest-rewards">
+                      <span 
+                        v-for="(reward, rIdx) in quest.rewards"
+                        :key="rIdx"
+                        class="reward-tag"
+                      >
+                        <template v-if="reward.type === 'phrase_unlock'">
+                          🔓 {{ reward.params.phraseTexts?.join('、') || '限定词' }}
+                        </template>
+                        <template v-else-if="reward.type === 'title_reward'">
+                          🏆 {{ reward.params.title || '限定称号' }}
+                        </template>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="quest-status">
+                    <span v-if="getQuestStatus(quest.id) === 'locked'" class="status-locked">
+                      🔒 未解锁
+                    </span>
+                    <span v-else-if="getQuestStatus(quest.id) === 'unlocked'" class="status-unlocked">
+                      进行中
+                    </span>
+                    <span v-else-if="getQuestStatus(quest.id) === 'completed'" class="status-completed">
+                      ✓ 可领取
+                    </span>
+                    <span v-else-if="getQuestStatus(quest.id) === 'claimed'" class="status-claimed">
+                      ✓ 已领取
+                    </span>
+                    <button
+                      v-if="getQuestStatus(quest.id) === 'completed'"
+                      class="claim-btn"
+                      @click="handleClaimReward(quest.id)"
+                    >
+                      领取
+                    </button>
                   </div>
                   <div class="quest-order">{{ index + 1 }}</div>
                 </div>
               </div>
             </div>
 
-            <div class="jieqi-hint-section">
-              <h4 class="section-title">创作提示</h4>
-              <div class="hint-card">
-                <p class="hint-text">{{ selectedJieqiChapter?.hint }}</p>
+            <div v-if="activeTab === 'phrases'" class="tab-content">
+              <div class="phrase-progress-info">
+                <span>已解锁 {{ phraseProgress.unlocked }} / {{ phraseProgress.total }} 个限定词</span>
+                <div class="mini-progress">
+                  <div 
+                    class="mini-progress-fill"
+                    :style="{ width: phraseProgress.percentage + '%' }"
+                  ></div>
+                </div>
+              </div>
+              
+              <div class="phrase-list">
+                <div
+                  v-for="phrase in selectedJieqiPhrases"
+                  :key="phrase.text"
+                  class="phrase-item"
+                  :class="[
+                    `rarity-${phrase.rarity}`,
+                    { locked: !getPhraseUnlocked(phrase.text) }
+                  ]"
+                >
+                  <div class="phrase-text">{{ phrase.text }}</div>
+                  <div class="phrase-info">
+                    <span class="phrase-category">{{ phrase.category === 'scene' ? '景物' : phrase.category === 'emotion' ? '情感' : phrase.category === 'time' ? '时间' : phrase.category === 'action' ? '动作' : '意象' }}</span>
+                    <span v-if="phrase.isExclusive" class="phrase-exclusive">限定</span>
+                  </div>
+                  <div v-if="!getPhraseUnlocked(phrase.text)" class="phrase-lock">🔒</div>
+                  <div v-else class="phrase-unlocked">✓</div>
+                </div>
+              </div>
+              
+              <div class="phrase-hint">
+                <span class="hint-icon">💡</span>
+                <span class="hint-text">完成任务链任务即可解锁更多限定词句</span>
               </div>
             </div>
           </div>
@@ -668,18 +847,50 @@ onMounted(() => {
   font-style: italic;
 }
 
-.jieqi-description {
+.detail-tabs {
+  display: flex;
+  gap: 8px;
   margin-bottom: 20px;
-  padding: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-tab {
+  padding: 10px 16px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-family: var(--font-serif);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.detail-tab:hover {
+  color: var(--text-primary);
+}
+
+.detail-tab.active {
+  color: var(--accent-gold);
+  border-bottom-color: var(--accent-gold);
+}
+
+.tab-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+  font-size: 11px;
   border-radius: 10px;
 }
 
-.jieqi-description p {
-  font-size: 14px;
-  color: var(--text-secondary);
-  line-height: 1.8;
-  margin: 0;
+.jieqi-detail-content {
+  min-height: 300px;
+}
+
+.tab-content {
+  animation: fadeIn 0.2s ease-out;
 }
 
 .section-title {
@@ -800,58 +1011,8 @@ onMounted(() => {
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
 }
 
-.jieqi-quests-section {
-  margin-bottom: 20px;
-}
-
-.quest-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.quest-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-
-.quest-icon {
-  font-size: 24px;
-}
-
-.quest-info {
-  flex: 1;
-}
-
-.quest-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin: 0 0 2px 0;
-}
-
-.quest-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 0;
-}
-
-.quest-order {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: rgba(201, 168, 108, 0.2);
-  color: var(--accent-gold);
-  font-size: 12px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.jieqi-hint-section {
+  margin-top: 20px;
 }
 
 .hint-card {
@@ -866,6 +1027,298 @@ onMounted(() => {
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.7;
+}
+
+.claim-success {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: rgba(124, 169, 124, 0.15);
+  border: 1px solid rgba(124, 169, 124, 0.3);
+  border-radius: 10px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.claim-icon {
+  font-size: 20px;
+}
+
+.claim-text {
+  font-size: 14px;
+  color: #7ca97c;
+  font-weight: 500;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--text-muted);
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.empty-text {
+  font-size: 14px;
+}
+
+.quest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quest-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.quest-item.locked {
+  opacity: 0.6;
+}
+
+.quest-item.completed {
+  border-color: rgba(124, 169, 124, 0.4);
+  background: rgba(124, 169, 124, 0.08);
+}
+
+.quest-item.claimed {
+  opacity: 0.7;
+}
+
+.quest-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.quest-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.quest-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
+}
+
+.quest-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 8px 0;
+}
+
+.quest-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reward-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(201, 168, 108, 0.15);
+  color: var(--accent-gold);
+  font-size: 11px;
+  border-radius: 4px;
+}
+
+.quest-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.status-locked {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.status-unlocked {
+  font-size: 12px;
+  color: var(--accent-gold);
+}
+
+.status-completed {
+  font-size: 12px;
+  color: #7ca97c;
+  font-weight: 500;
+}
+
+.status-claimed {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.claim-btn {
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #7ca97c, #5d8a5d);
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.claim-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(124, 169, 124, 0.4);
+}
+
+.quest-order {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.phrase-progress-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.mini-progress {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.mini-progress-fill {
+  height: 100%;
+  background: var(--accent-gold);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.phrase-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.phrase-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.phrase-item.locked {
+  opacity: 0.5;
+}
+
+.phrase-item.rarity-rare {
+  border-color: rgba(52, 152, 219, 0.3);
+  background: rgba(52, 152, 219, 0.05);
+}
+
+.phrase-item.rarity-epic {
+  border-color: rgba(155, 89, 182, 0.3);
+  background: rgba(155, 89, 182, 0.05);
+}
+
+.phrase-item.rarity-legendary {
+  border-color: rgba(255, 215, 0, 0.3);
+  background: rgba(255, 215, 0, 0.05);
+}
+
+.phrase-text {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.phrase-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.phrase-category {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.phrase-exclusive {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+  border-radius: 4px;
+}
+
+.phrase-lock,
+.phrase-unlocked {
+  font-size: 14px;
+  margin-left: 4px;
+}
+
+.phrase-unlocked {
+  color: #7ca97c;
+}
+
+.phrase-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(201, 168, 108, 0.08);
+  border-radius: 10px;
+  border-left: 3px solid var(--accent-gold);
+}
+
+.phrase-hint .hint-icon {
+  font-size: 16px;
+}
+
+.phrase-hint .hint-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
 }
 
 @keyframes fadeIn {
@@ -895,6 +1348,10 @@ onMounted(() => {
   
   .jieqi-modal {
     max-height: 90vh;
+  }
+  
+  .phrase-list {
+    grid-template-columns: 1fr;
   }
 }
 </style>

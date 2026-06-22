@@ -69,7 +69,7 @@ import {
 import JieqiGathering from '@/components/JieqiGathering.vue'
 import JieqiPortfolio from '@/components/JieqiPortfolio.vue'
 import JieqiSession from '@/components/JieqiSession.vue'
-import { loadJieqiState, completeJieqiChapter, addCompositionToJieqiPortfolio, refreshJieqiUnlocks } from '@/utils/jieqi'
+import { loadJieqiState, completeJieqiChapter, addCompositionToJieqiPortfolio, refreshJieqiUnlocks, checkAndCompleteJieqiQuests, isJieqiPhraseUnlocked } from '@/utils/jieqi'
 import type { JieqiState, JieqiType, JieqiChapter } from '@/types'
 import { getJieqiChapter, getJieqiById, getJieqiPhrases as getJieqiPhrasesData } from '@/data/jieqi'
 
@@ -1548,9 +1548,15 @@ const activeJieqiInfo = computed(() => {
 
 const jieqiPhrases = computed<Phrase[]>(() => {
   if (!activeJieqiId.value) return []
-  const jieqiPhraseList = getJieqiPhrasesData(activeJieqiId.value)
-  return jieqiPhraseList.map((jp, index) => ({
-    id: `jq_phrase_${activeJieqiId.value}_${index}`,
+  const jieqiId = activeJieqiId.value
+  const jieqiPhraseList = getJieqiPhrasesData(jieqiId)
+  const state = jieqiState.value
+  const unlockedPhrases = jieqiPhraseList.filter(jp => {
+    if (!jp.isExclusive) return true
+    return state.collectedPhrases.includes(jp.text)
+  })
+  return unlockedPhrases.map((jp, index) => ({
+    id: `jq_phrase_${jieqiId}_${index}`,
     text: jp.text,
     category: jp.category,
     position: null,
@@ -1560,7 +1566,7 @@ const jieqiPhrases = computed<Phrase[]>(() => {
     rarity: jp.rarity,
     source: {
       type: 'chapter',
-      chapterId: `jq_${activeJieqiId.value}`
+      chapterId: `jq_${jieqiId}`
     }
   }))
 })
@@ -1592,6 +1598,7 @@ const jieqiScore = computed<ScoreBreakdown>(() => {
 })
 
 const handleStartJieqiChapter = (chapterId: string, jieqiId: string) => {
+  jieqiState.value = loadJieqiState()
   activeJieqiChapterId.value = chapterId
   activeJieqiId.value = jieqiId as JieqiType
   jieqiBoardPhrases.value = []
@@ -1641,8 +1648,11 @@ const handleJieqiSubmit = () => {
   if (finalScore.total >= 60) {
     completeJieqiChapter(activeJieqiChapterId.value)
     addCompositionToJieqiPortfolio(activeJieqiId.value, composition.id)
-    jieqiState.value = loadJieqiState()
   }
+  
+  const newlyCompletedQuests = checkAndCompleteJieqiQuests(activeJieqiId.value)
+  
+  jieqiState.value = loadJieqiState()
   
   const phraseTexts = jieqiBoardPhrases.value.map(p => p.text)
   collectPhrases(phraseTexts)
@@ -1654,6 +1664,12 @@ const handleJieqiSubmit = () => {
   activeJieqiId.value = null
   jieqiBoardPhrases.value = []
   showJieqiGathering.value = true
+  
+  if (newlyCompletedQuests.length > 0) {
+    setTimeout(() => {
+      console.log(`完成了 ${newlyCompletedQuests.length} 个节气任务！`)
+    }, 500)
+  }
 }
 
 const handleJieqiQuit = () => {
