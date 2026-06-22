@@ -37,7 +37,7 @@ import { loadGatheringState, saveGatheringState, setGatheringActive, clearActive
 import { getCipaiById, getCipaiScoringRuleByMode, cipaiTemplates } from '@/data/cipaiTemplates'
 import { sortPhrasesForCipai, getCipaiProgress, getNextLineHint, getCipaiScoreForPhrases } from '@/utils/cipaiWorkshop'
 import type { CipaiTemplate, CipaiScoringMode, CipaiScoreBreakdown, ClassicPoem } from '@/types'
-import { getPoemById } from '@/data/classicPoems'
+import { getPoemById as getClassicPoemById } from '@/data/classicPoems'
 
 import TopHeader from '@/components/TopHeader.vue'
 import PhrasePool from '@/components/PhrasePool.vue'
@@ -58,6 +58,14 @@ import GatheringSession from '@/components/GatheringSession.vue'
 import GatheringRankingPanel from '@/components/GatheringRankingPanel.vue'
 import CipaiWorkshop from '@/components/CipaiWorkshop.vue'
 import ClassicReconstruction from '@/components/ClassicReconstruction.vue'
+import CollaborativePoetryPanel from '@/components/CollaborativePoetryPanel.vue'
+import CollaborativeTurnEditor from '@/components/CollaborativeTurnEditor.vue'
+import CollaborativeScorePanel from '@/components/CollaborativeScorePanel.vue'
+import CollaborativeArchive from '@/components/CollaborativeArchive.vue'
+import {
+  getAllPoems,
+  getPoemById
+} from '@/utils/collaborativePoetry'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -136,6 +144,16 @@ const showClassicReconstruction = ref(false)
 const activeClassicPoemId = ref<string | null>(null)
 const classicBestScores = ref<Record<string, number>>({})
 const classicCompletedPoemIds = ref<string[]>([])
+
+const showCollaborativePoetry = ref(false)
+const activeCollaborativePoemId = ref<string | null>(null)
+const showCollaborativeArchive = ref(false)
+const collaborativePoemsRevision = ref(0)
+
+const archivedCollaborativePoems = computed(() => {
+  void collaborativePoemsRevision.value
+  return getAllPoems().filter(p => p.status === 'archived')
+})
 
 let autoSaveTimer: number | null = null
 
@@ -618,6 +636,30 @@ const handleClassicSelectPhrase = (phrase: Phrase) => {
     return
   }
   handlePhraseSelect(phrase)
+}
+
+const handleOpenCollaborativePoem = (poemId: string) => {
+  activeCollaborativePoemId.value = poemId
+  musicPlayer.playPluckSound()
+}
+
+const handleRefreshCollaborativePoems = () => {
+  collaborativePoemsRevision.value++
+}
+
+const handleCloseCollaborativePoem = () => {
+  activeCollaborativePoemId.value = null
+  collaborativePoemsRevision.value++
+}
+
+const handleOpenCollaborativeArchive = () => {
+  showCollaborativeArchive.value = true
+  showCollaborativePoetry.value = false
+}
+
+const handleCloseCollaborativeArchive = () => {
+  showCollaborativeArchive.value = false
+  collaborativePoemsRevision.value++
 }
 
 const combinedScore = computed((): ScoreBreakdown => {
@@ -1553,6 +1595,7 @@ watch(currentChapterId, (newId) => {
       @openGathering="showGatheringPanel = true"
       @openCipaiWorkshop="showCipaiWorkshop = true"
       @openClassicReconstruction="showClassicReconstruction = true"
+      @openCollaborativePoetry="showCollaborativePoetry = true"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -1873,6 +1916,38 @@ watch(currentChapterId, (newId) => {
       @selectPoem="handleSelectClassicPoem"
       @startReconstruction="handleStartClassicReconstruction"
       @selectPhrase="handleClassicSelectPhrase"
+    />
+
+    <CollaborativePoetryPanel
+      v-if="showCollaborativePoetry"
+      :revision="collaborativePoemsRevision"
+      @close="showCollaborativePoetry = false"
+      @open="handleOpenCollaborativePoem"
+      @refresh="handleRefreshCollaborativePoems"
+      @openArchive="handleOpenCollaborativeArchive"
+    />
+
+    <CollaborativeTurnEditor
+      v-if="activeCollaborativePoemId && getPoemById(activeCollaborativePoemId)?.status !== 'scoring'"
+      :poemId="activeCollaborativePoemId"
+      @close="handleCloseCollaborativePoem"
+      @refresh="handleRefreshCollaborativePoems"
+      @switchToScore="handleRefreshCollaborativePoems"
+    />
+
+    <CollaborativeScorePanel
+      v-if="activeCollaborativePoemId && getPoemById(activeCollaborativePoemId)?.status === 'scoring'"
+      :poemId="activeCollaborativePoemId"
+      @close="handleCloseCollaborativePoem"
+      @refresh="handleRefreshCollaborativePoems"
+      @switchToEditor="handleRefreshCollaborativePoems"
+    />
+
+    <CollaborativeArchive
+      v-if="showCollaborativeArchive"
+      :archivedPoems="archivedCollaborativePoems"
+      @refresh="handleRefreshCollaborativePoems"
+      @open="(id) => { showCollaborativeArchive = false; handleOpenCollaborativePoem(id) }"
     />
 
     <div class="bg-decoration">

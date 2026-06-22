@@ -29,6 +29,7 @@ const emit = defineEmits<{
   (e: 'openSociety'): void
   (e: 'openTrial'): void
   (e: 'openClassicReconstruction'): void
+  (e: 'openCollaborativePoetry'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save'): void
@@ -132,6 +133,9 @@ const emit = defineEmits<{
       </button>
       <button class="icon-btn classic-btn" @click="emit('openClassicReconstruction')" title="名篇重构">
         📜
+      </button>
+      <button class="icon-btn collab-btn" @click="emit('openCollaborativePoetry')" title="合卷联诗">
+        🤝
       </button>
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺

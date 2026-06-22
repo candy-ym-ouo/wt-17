@@ -1380,3 +1380,87 @@ export const RESTORATION_GRADE_COLORS: Record<string, string> = {
   '近似': '#a8a498',
   '远韵': '#6b6858'
 }
+
+export type CollaborativeStatus = 'draft' | 'in_progress' | 'scoring' | 'completed' | 'archived'
+
+export interface Participant {
+  id: string
+  name: string
+  avatar?: string
+  joinedAt: number
+  reputation?: number
+}
+
+export interface Turn {
+  id: string
+  poemId: string
+  turnNumber: number
+  participantId: string
+  participantName: string
+  content: string
+  submittedAt: number
+  isLocked: boolean
+  lockedBy?: string
+  lockedAt?: number
+  comment?: string
+}
+
+export interface TurnScore {
+  turnId: string
+  scorerId: string
+  scorerName: string
+  coherence: number
+  imagery: number
+  rhythm: number
+  themeMatch: number
+  comment: string
+  scoredAt: number
+}
+
+export interface CollaborativePoem {
+  id: string
+  title: string
+  theme: string
+  description: string
+  totalTurns: number
+  currentTurnNumber: number
+  status: CollaborativeStatus
+  creatorId: string
+  creatorName: string
+  createdAt: number
+  updatedAt: number
+  completedAt?: number
+  archivedAt?: number
+  participants: Participant[]
+  turns: Turn[]
+  turnScores: TurnScore[]
+  requiredKeywords?: string[]
+  forbiddenWords?: string[]
+  turnTimeLimitSeconds?: number
+  accentColor: string
+  icon: string
+}
+
+export interface CollaborativeState {
+  activePoemId: string | null
+  poems: CollaborativePoem[]
+  archivedPoemIds: string[]
+  currentUserId: string
+  currentUserName: string
+}
+
+export const COLLABORATIVE_STATUS_LABELS: Record<CollaborativeStatus, string> = {
+  draft: '草稿',
+  in_progress: '创作中',
+  scoring: '评分中',
+  completed: '已完成',
+  archived: '已归档'
+}
+
+export const COLLABORATIVE_STATUS_COLORS: Record<CollaborativeStatus, string> = {
+  draft: '#a8a498',
+  in_progress: '#7ca97c',
+  scoring: '#c9a86c',
+  completed: '#9b59b6',
+  archived: '#6b6858'
+}
