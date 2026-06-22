@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, PoetrySocietyState, ReputationRank } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, PoetrySocietyState, ReputationRank, TrialState, TrialSettlementResult, TrialTheme } from '@/types'
 import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes, getAllChapters, isRareChapter } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
-import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
+import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases, dropPhrases } from '@/data/phrases'
 import { calculateScore, generatePoemTitle, generatePoemTitleOptions, generatePhasedGuidance } from '@/utils/scoring'
 import { getThemeById, getDefaultTheme } from '@/data/themes'
 import { loadThemeState, getCurrentThemeId, setCurrentTheme, getCustomThemes } from '@/utils/storage'
@@ -52,8 +52,13 @@ import RecommendationTip from '@/components/RecommendationTip.vue'
 import PoetryGatheringPanel from '@/components/PoetryGatheringPanel.vue'
 import GatheringSession from '@/components/GatheringSession.vue'
 import PoetrySocietyPanel from '@/components/PoetrySocietyPanel.vue'
+import InkTrialPanel from '@/components/InkTrialPanel.vue'
+import TrialSession from '@/components/TrialSession.vue'
+import TrialSettlement from '@/components/TrialSettlement.vue'
 import { loadSocietyState, saveSocietyState, submitToSociety, reviewSubmission as reviewSocietySubmission, exhibitComposition as exhibitSocietyComposition, featureExhibition, checkRareChapterUnlocks, claimMilestoneReward as claimSocietyMilestoneReward } from '@/utils/poetrySociety'
 import { rareChapters, reputationMilestones } from '@/data/poetrySociety'
+import { loadTrialState, saveTrialState, settleTrial, saveTrialResult, isTrialUnlocked } from '@/utils/trials'
+import { getTrialById, trialThemes } from '@/data/trials'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -125,6 +130,13 @@ const gatheringElapsedSeconds = ref(0)
 
 const showSocietyPanel = ref(false)
 const societyState = ref<PoetrySocietyState>(loadSocietyState())
+
+const showTrialPanel = ref(false)
+const trialState = ref<TrialState>(loadTrialState())
+const showTrialSession = ref(false)
+const activeTrialId = ref<string | null>(null)
+const showTrialSettlement = ref(false)
+const trialSettlementResult = ref<TrialSettlementResult | null>(null)
 
 let autoSaveTimer: number | null = null
 
@@ -1239,6 +1251,90 @@ const handleCloseSocietyPanel = () => {
   }
 }
 
+const handleCloseTrialPanel = () => {
+  showTrialPanel.value = false
+  if (boardPhrases.value.length > 0) {
+    saveCurrentDraft('dialog_close')
+  }
+}
+
+const activeTrial = computed((): TrialTheme | null => {
+  if (!activeTrialId.value) return null
+  return getTrialById(activeTrialId.value) || null
+})
+
+const trialPhrases = computed((): Phrase[] => {
+  if (!activeTrialId.value) return []
+  const trial = getTrialById(activeTrialId.value)
+  if (!trial) return []
+  
+  const allPhrases = getAllPhrases()
+  
+  return dropPhrases(allPhrases, {
+    totalCount: 30,
+    themeKeywords: trial.requiredKeywords,
+    themeMatchBoost: 2.5,
+    forbiddenWords: trial.forbiddenWords
+  })
+})
+
+const handleStartTrial = (trialId: string) => {
+  if (!isTrialUnlocked(trialId)) return
+  
+  activeTrialId.value = trialId
+  showTrialPanel.value = false
+  showTrialSession.value = true
+  musicPlayer.playPluckSound()
+}
+
+const handleTrialSelectPhrase = (phrase: Phrase) => {
+  musicPlayer.playPluckSound()
+}
+
+const handleTrialRemovePhrase = (phraseId: string) => {
+  musicPlayer.playPluckSound()
+}
+
+const handleTrialSubmit = (phrases: Phrase[], elapsedSeconds: number) => {
+  if (!activeTrialId.value) return
+  
+  const result = settleTrial(activeTrialId.value, phrases, elapsedSeconds)
+  trialSettlementResult.value = result
+  saveTrialResult(result)
+  
+  trialState.value = loadTrialState()
+  questState.value = loadQuestState()
+  
+  showTrialSession.value = false
+  showTrialSettlement.value = true
+  
+  musicPlayer.playSaveChime()
+}
+
+const handleTrialQuit = () => {
+  showTrialSession.value = false
+  activeTrialId.value = null
+}
+
+const handleTrialSettlementClose = () => {
+  showTrialSettlement.value = false
+  trialSettlementResult.value = null
+  showTrialPanel.value = true
+}
+
+const handleTrialRetry = () => {
+  showTrialSettlement.value = false
+  trialSettlementResult.value = null
+  showTrialSession.value = true
+}
+
+const handleTrialBackToList = () => {
+  showTrialSettlement.value = false
+  trialSettlementResult.value = null
+  activeTrialId.value = null
+  showTrialPanel.value = true
+}
+
 const activeGathering = computed(() => {
   if (!activeGatheringId.value) return null
   return getGatheringById(activeGatheringId.value) || null
@@ -1505,6 +1601,7 @@ watch(currentChapterId, (newId) => {
       @openThemes="showThemePanel = true"
       @openGathering="showGatheringPanel = true"
       @openSociety="showSocietyPanel = true"
+      @openTrial="showTrialPanel = true"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -1781,6 +1878,31 @@ watch(currentChapterId, (newId) => {
       @feature="handleFeatureExhibition"
       @unlockRareChapter="handleUnlockRareChapter"
       @claimMilestone="handleClaimSocietyMilestone"
+    />
+    
+    <InkTrialPanel
+      v-if="showTrialPanel"
+      :trialState="trialState"
+      @close="handleCloseTrialPanel"
+      @startTrial="handleStartTrial"
+    />
+    
+    <TrialSession
+      v-if="showTrialSession && activeTrial"
+      :trial="activeTrial"
+      :phrases="trialPhrases"
+      @selectPhrase="handleTrialSelectPhrase"
+      @removePhrase="handleTrialRemovePhrase"
+      @submit="handleTrialSubmit"
+      @quit="handleTrialQuit"
+    />
+    
+    <TrialSettlement
+      v-if="showTrialSettlement && trialSettlementResult"
+      :result="trialSettlementResult"
+      @close="handleTrialSettlementClose"
+      @retry="handleTrialRetry"
+      @back="handleTrialBackToList"
     />
     
     <div class="bg-decoration">

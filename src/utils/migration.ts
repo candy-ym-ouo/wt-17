@@ -31,6 +31,7 @@ export type StorageDataType =
   | 'impromptuTopicState'
   | 'reviewState'
   | 'poetrySocietyState'
+  | 'trialState'
 
 export interface VersionedData<T> {
   _schemaVersion: number
@@ -396,6 +397,7 @@ const migrations: Record<StorageDataType, MigrationEntry[]> = {
   impromptuTopicState: [],
   reviewState: [],
   poetrySocietyState: [],
+  trialState: [],
 }
 
 function fillSourceGaps(source: PhraseSource | undefined | null, chapterId: string): PhraseSource {
@@ -631,6 +633,7 @@ export function getMigrationStatus(): Record<StorageDataType, { current: number;
     impromptuTopicState: 'poem_slices_impromptu_state',
     reviewState: 'poem_slices_review_state',
     poetrySocietyState: 'poem_slices_poetry_society',
+    trialState: 'poem_slices_trial_state',
   }
 
   const types: StorageDataType[] = [
@@ -649,6 +652,7 @@ export function getMigrationStatus(): Record<StorageDataType, { current: number;
     'impromptuTopicState',
     'reviewState',
     'poetrySocietyState',
+    'trialState',
   ]
 
   types.forEach(type => {

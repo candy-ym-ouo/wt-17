@@ -1113,3 +1113,161 @@ export const REPUTATION_RANK_ICONS: Record<ReputationRank, string> = {
   '翰林': '⭐',
   '大学士': '🏮'
 }
+
+export type TrialDifficulty = '初级' | '中级' | '高级' | '大师' | '传说'
+
+export type TrialThemeType = '山水' | '风月' | '边塞' | '闺怨' | '咏史' | '田园' | '送别' | '思乡'
+
+export interface TrialTheme {
+  id: string
+  name: string
+  type: TrialThemeType
+  description: string
+  icon: string
+  accentColor: string
+  backgroundGradient: string
+  difficulty: TrialDifficulty
+  requiredScore: number
+  targetPhraseCount: number
+  timeLimitSeconds: number
+  requiredKeywords: string[]
+  forbiddenWords: string[]
+  bonusRules: TrialBonusRule[]
+  rewards: TrialRewardPool
+  settlementRules: TrialSettlementRule[]
+  unlockCondition?: {
+    type: 'score_threshold' | 'chapter_count' | 'trial_clear' | 'reputation_rank'
+    params: Record<string, any>
+  }
+}
+
+export interface TrialBonusRule {
+  type: 'keyword_combo' | 'category_balance' | 'speed_bonus' | 'rare_phrase' | 'theme_match' | 'perfect_combo'
+  label: string
+  description: string
+  bonus: number
+  params: Record<string, any>
+}
+
+export interface TrialSettlementRule {
+  type: 'imagery_drop' | 'title_award' | 'score_multiplier' | 'phrase_unlock' | 'spectra_unlock'
+  params: Record<string, any>
+  description: string
+  minScore: number
+}
+
+export interface TrialRewardPool {
+  rareImageries: TrialRareImagery[]
+  titles: TrialTitle[]
+  spectra: TrialSpectra[]
+  phraseUnlocks: string[]
+}
+
+export interface TrialRareImagery {
+  id: string
+  name: string
+  description: string
+  rarity: 'rare' | 'epic' | 'legendary'
+  icon: string
+  phraseTexts: string[]
+  dropRate: number
+  isExclusive?: boolean
+}
+
+export interface TrialTitle {
+  id: string
+  name: string
+  description: string
+  rarity: 'rare' | 'epic' | 'legendary'
+  icon: string
+  condition: {
+    type: 'score_threshold' | 'speed_clear' | 'perfect_clear' | 'all_keywords' | 'no_forbidden'
+    params: Record<string, any>
+  }
+}
+
+export interface TrialSpectra {
+  id: string
+  name: string
+  description: string
+  rarity: 'rare' | 'epic' | 'legendary'
+  icon: string
+  pattern: string[]
+  dropRate: number
+  effect?: string
+}
+
+export interface TrialState {
+  unlockedThemes: string[]
+  clearedThemes: string[]
+  bestScores: Record<string, number>
+  bestTimes: Record<string, number>
+  earnedTitles: string[]
+  collectedImageries: string[]
+  collectedSpectra: string[]
+  totalTrials: number
+  totalCleared: number
+  currentStreak: number
+  bestStreak: number
+}
+
+export interface TrialSessionState {
+  themeId: string
+  startTime: number
+  elapsedSeconds: number
+  isPaused: boolean
+  isComplete: boolean
+  boardPhrases: Phrase[]
+}
+
+export interface TrialSettlementResult {
+  themeId: string
+  themeName: string
+  score: number
+  scoreGrade: ScoreGrade
+  timeUsedSeconds: number
+  triggeredBonuses: TrialBonusResult[]
+  totalBonus: number
+  finalScore: number
+  earnedImageries: TrialRareImagery[]
+  earnedTitles: TrialTitle[]
+  earnedSpectra: TrialSpectra[]
+  unlockedPhrases: string[]
+  isNewRecord: boolean
+  isFirstClear: boolean
+  stars: number
+}
+
+export interface TrialBonusResult {
+  type: string
+  label: string
+  bonus: number
+  description: string
+}
+
+export const TRIAL_DIFFICULTY_LABELS: Record<TrialDifficulty, string> = {
+  '初级': '初级',
+  '中级': '中级',
+  '高级': '高级',
+  '大师': '大师级',
+  '传说': '传说级'
+}
+
+export const TRIAL_DIFFICULTY_COLORS: Record<TrialDifficulty, string> = {
+  '初级': '#7ca97c',
+  '中级': '#7a9ea8',
+  '高级': '#c9a86c',
+  '大师': '#a87ac9',
+  '传说': '#c95b5b'
+}
+
+export const TRIAL_THEME_TYPE_LABELS: Record<TrialThemeType, string> = {
+  '山水': '山水田园',
+  '风月': '风花雪月',
+  '边塞': '边塞征战',
+  '闺怨': '闺怨情思',
+  '咏史': '咏史怀古',
+  '田园': '田园隐逸',
+  '送别': '送别离愁',
+  '思乡': '思乡怀人'
+}

@@ -27,6 +27,7 @@ const emit = defineEmits<{
   (e: 'openThemes'): void
   (e: 'openGathering'): void
   (e: 'openSociety'): void
+  (e: 'openTrial'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save'): void
@@ -124,6 +125,9 @@ const emit = defineEmits<{
       </button>
       <button class="icon-btn society-btn" @click="emit('openSociety')" title="诗社经营">
         🏛️
+      </button>
+      <button class="icon-btn trial-btn" @click="emit('openTrial')" title="墨韵试炼">
+        🏮
       </button>
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺
@@ -394,6 +398,10 @@ const emit = defineEmits<{
 
 .society-btn:hover {
   color: #9b8ec9;
+}
+
+.trial-btn:hover {
+  color: #c9a86c;
 }
 
 .save-btn {
