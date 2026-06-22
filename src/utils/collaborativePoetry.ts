@@ -1,4 +1,4 @@
-import type { CollaborativePoem, CollaborativeState, Participant, Turn, TurnScore, CollaborativeStatus } from '@/types'
+import type { CollaborativePoem, CollaborativeState, Participant, Turn, TurnScore, CollaborativeStatus, CollaborativeUser } from '@/types'
 import { wrapWithVersion, unwrapVersionedData, needsMigration, migrateData } from '@/utils/migration'
 
 const STORAGE_KEY = 'poem_slices_collaborative'
@@ -8,13 +8,23 @@ const DEFAULT_USER_NAME = '我'
 
 const ACCENT_COLORS = ['#c9a86c', '#7ca97c', '#7a9ea8', '#9b59b6', '#c56b6b', '#5b7a8c']
 const ICONS = ['📜', '🖋️', '🎋', '🏮', '🌙', '🌸', '⛰️', '🍃']
+const DEFAULT_AVATARS = ['👤', '🧑', '👩', '🧔', '👨‍🎨', '👩‍🎨', '🧙', '👸', '🤴', '🧝']
+
+const DEFAULT_USERS: CollaborativeUser[] = [
+  { id: 'local_user_001', name: '我', avatar: '👤', createdAt: Date.now() },
+  { id: 'local_user_002', name: '李白', avatar: '🍶', createdAt: Date.now() },
+  { id: 'local_user_003', name: '杜甫', avatar: '📖', createdAt: Date.now() },
+  { id: 'local_user_004', name: '苏轼', avatar: '🖌️', createdAt: Date.now() },
+  { id: 'local_user_005', name: '李清照', avatar: '🌸', createdAt: Date.now() }
+]
 
 export const DEFAULT_COLLABORATIVE_STATE: CollaborativeState = {
   activePoemId: null,
   poems: [],
   archivedPoemIds: [],
   currentUserId: DEFAULT_USER_ID,
-  currentUserName: DEFAULT_USER_NAME
+  currentUserName: DEFAULT_USER_NAME,
+  users: DEFAULT_USERS
 }
 
 export const getCurrentUser = (): { id: string; name: string } => {
@@ -43,22 +53,99 @@ export const saveCollaborativeState = (state: CollaborativeState): void => {
 export const loadCollaborativeState = (): CollaborativeState => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...DEFAULT_COLLABORATIVE_STATE }
+    if (!raw) return { ...DEFAULT_COLLABORATIVE_STATE, users: [...DEFAULT_USERS] }
 
     let data = JSON.parse(raw)
 
     if (needsMigration(data)) {
       const migrated = migrateData<CollaborativeState>('collaborative', data)
       localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
-      return migrated.data
+      const result = migrated.data
+      if (!result.users || result.users.length === 0) {
+        result.users = [...DEFAULT_USERS]
+      }
+      return result
     }
 
     const loaded = unwrapVersionedData(data)
-    return { ...DEFAULT_COLLABORATIVE_STATE, ...loaded }
+    const result = { ...DEFAULT_COLLABORATIVE_STATE, ...loaded }
+    if (!result.users || result.users.length === 0) {
+      result.users = [...DEFAULT_USERS]
+    }
+    return result
   } catch (e) {
     console.error('Failed to load collaborative state:', e)
-    return { ...DEFAULT_COLLABORATIVE_STATE }
+    return { ...DEFAULT_COLLABORATIVE_STATE, users: [...DEFAULT_USERS] }
   }
+}
+
+export const getAllUsers = (): CollaborativeUser[] => {
+  const state = loadCollaborativeState()
+  return state.users
+}
+
+export const getCurrentUserFull = (): CollaborativeUser | null => {
+  const state = loadCollaborativeState()
+  return state.users.find(u => u.id === state.currentUserId) || state.users[0] || null
+}
+
+export const switchUser = (userId: string): boolean => {
+  const state = loadCollaborativeState()
+  const user = state.users.find(u => u.id === userId)
+  if (!user) return false
+
+  state.currentUserId = user.id
+  state.currentUserName = user.name
+  saveCollaborativeState(state)
+  return true
+}
+
+export const addUser = (name: string, avatar?: string): CollaborativeUser | null => {
+  if (!name.trim()) return null
+  const state = loadCollaborativeState()
+  const now = Date.now()
+  const newUser: CollaborativeUser = {
+    id: `user_${now}_${Math.random().toString(36).slice(2, 7)}`,
+    name: name.trim(),
+    avatar: avatar || DEFAULT_AVATARS[state.users.length % DEFAULT_AVATARS.length],
+    createdAt: now
+  }
+  state.users.push(newUser)
+  saveCollaborativeState(state)
+  return newUser
+}
+
+export const removeUser = (userId: string): boolean => {
+  const state = loadCollaborativeState()
+  if (state.users.length <= 1) return false
+  const index = state.users.findIndex(u => u.id === userId)
+  if (index === -1) return false
+
+  state.users.splice(index, 1)
+
+  if (state.currentUserId === userId) {
+    const remaining = state.users[0]
+    if (remaining) {
+      state.currentUserId = remaining.id
+      state.currentUserName = remaining.name
+    }
+  }
+
+  saveCollaborativeState(state)
+  return true
+}
+
+export const renameUser = (userId: string, newName: string): boolean => {
+  if (!newName.trim()) return false
+  const state = loadCollaborativeState()
+  const user = state.users.find(u => u.id === userId)
+  if (!user) return false
+  user.name = newName.trim()
+  if (state.currentUserId === userId) {
+    state.currentUserName = user.name
+  }
+  saveCollaborativeState(state)
+  return true
 }
 
 export const createCollaborativePoem = (
@@ -429,4 +516,32 @@ export const getPoemProgress = (poem: CollaborativePoem): { current: number; tot
     total: poem.totalTurns,
     percentage: Math.round((submitted / poem.totalTurns) * 100)
   }
+}
+
+export const getNextSuggestedParticipant = (poem: CollaborativePoem): Participant | null => {
+  if (poem.status !== 'in_progress') return null
+  if (poem.participants.length === 0) return null
+
+  const submittedTurns = poem.turns.filter(t => t.submittedAt > 0)
+  if (submittedTurns.length === 0) {
+    return poem.participants[0]
+  }
+
+  const turnCountMap: Record<string, number> = {}
+  poem.participants.forEach(p => { turnCountMap[p.id] = 0 })
+  submittedTurns.forEach(t => {
+    if (turnCountMap[t.participantId] !== undefined) {
+      turnCountMap[t.participantId]++
+    }
+  })
+
+  let minCount = Infinity
+  let candidate: Participant | null = null
+  for (const p of poem.participants) {
+    if (turnCountMap[p.id] < minCount) {
+      minCount = turnCountMap[p.id]
+      candidate = p
+    }
+  }
+  return candidate
 }

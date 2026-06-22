@@ -1441,12 +1441,20 @@ export interface CollaborativePoem {
   icon: string
 }
 
+export interface CollaborativeUser {
+  id: string
+  name: string
+  avatar?: string
+  createdAt: number
+}
+
 export interface CollaborativeState {
   activePoemId: string | null
   poems: CollaborativePoem[]
   archivedPoemIds: string[]
   currentUserId: string
   currentUserName: string
+  users: CollaborativeUser[]
 }
 
 export const COLLABORATIVE_STATUS_LABELS: Record<CollaborativeStatus, string> = {

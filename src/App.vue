@@ -1928,7 +1928,7 @@ watch(currentChapterId, (newId) => {
     />
 
     <CollaborativeTurnEditor
-      v-if="activeCollaborativePoemId && getPoemById(activeCollaborativePoemId)?.status !== 'scoring'"
+      v-if="activeCollaborativePoemId && (getPoemById(activeCollaborativePoemId)?.status === 'draft' || getPoemById(activeCollaborativePoemId)?.status === 'in_progress')"
       :poemId="activeCollaborativePoemId"
       @close="handleCloseCollaborativePoem"
       @refresh="handleRefreshCollaborativePoems"
@@ -1936,7 +1936,7 @@ watch(currentChapterId, (newId) => {
     />
 
     <CollaborativeScorePanel
-      v-if="activeCollaborativePoemId && getPoemById(activeCollaborativePoemId)?.status === 'scoring'"
+      v-if="activeCollaborativePoemId && (getPoemById(activeCollaborativePoemId)?.status === 'scoring' || getPoemById(activeCollaborativePoemId)?.status === 'completed' || getPoemById(activeCollaborativePoemId)?.status === 'archived')"
       :poemId="activeCollaborativePoemId"
       @close="handleCloseCollaborativePoem"
       @refresh="handleRefreshCollaborativePoems"

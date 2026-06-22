@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import type { CollaborativePoem, CollaborativeState } from '@/types'
+import type { CollaborativePoem, CollaborativeState, CollaborativeUser } from '@/types'
 import {
   loadCollaborativeState,
   createCollaborativePoem,
@@ -10,7 +10,14 @@ import {
   getPoemTotalScore,
   deletePoem,
   startPoem,
-  joinPoem
+  joinPoem,
+  getAllUsers,
+  getCurrentUserFull,
+  switchUser,
+  addUser,
+  removeUser,
+  renameUser,
+  getNextSuggestedParticipant
 } from '@/utils/collaborativePoetry'
 import { COLLABORATIVE_STATUS_LABELS, COLLABORATIVE_STATUS_COLORS } from '@/types'
 import CollaborativeTurnEditor from './CollaborativeTurnEditor.vue'
@@ -34,8 +41,15 @@ const newPoemTurns = ref(4)
 const newPoemKeywords = ref('')
 const newPoemForbidden = ref('')
 
+const showUserPanel = ref(false)
+const newUserName = ref('')
+const editingUserId = ref<string | null>(null)
+const editingUserName = ref('')
+
 const activePoems = computed(() => getActivePoems())
 const archivedPoems = computed(() => getArchivedPoems())
+const allUsers = computed(() => getAllUsers())
+const currentUser = computed(() => getCurrentUserFull())
 
 const selectedPoem = computed((): CollaborativePoem | null => {
   if (!selectedPoemId.value) return null
@@ -50,6 +64,51 @@ const formatDate = (ts: number): string => {
   if (!ts) return '-'
   const d = new Date(ts)
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+const handleSwitchUser = (userId: string) => {
+  switchUser(userId)
+  refreshState()
+}
+
+const handleAddUser = () => {
+  if (!newUserName.value.trim()) {
+    alert('请输入用户名')
+    return
+  }
+  addUser(newUserName.value.trim())
+  newUserName.value = ''
+  refreshState()
+}
+
+const handleStartEditUser = (user: CollaborativeUser) => {
+  editingUserId.value = user.id
+  editingUserName.value = user.name
+}
+
+const handleSaveEditUser = () => {
+  if (editingUserId.value && editingUserName.value.trim()) {
+    renameUser(editingUserId.value, editingUserName.value.trim())
+    refreshState()
+  }
+  editingUserId.value = null
+  editingUserName.value = ''
+}
+
+const handleCancelEditUser = () => {
+  editingUserId.value = null
+  editingUserName.value = ''
+}
+
+const handleRemoveUser = (userId: string) => {
+  if (allUsers.value.length <= 1) {
+    alert('至少需要保留一个用户')
+    return
+  }
+  if (confirm('确定要删除该用户吗？该用户历史创作记录仍会保留。')) {
+    removeUser(userId)
+    refreshState()
+  }
 }
 
 const handleCreatePoem = () => {
@@ -100,10 +159,10 @@ const handleOpenPoem = (poemId: string) => {
   refreshState()
   const poem = state.value.poems.find(p => p.id === poemId)
   if (poem) {
-    if (poem.status === 'scoring' || poem.status === 'completed' || poem.status === 'archived') {
-      activeTab.value = 'score'
-    } else {
+    if (poem.status === 'draft' || poem.status === 'in_progress') {
       activeTab.value = 'editor'
+    } else {
+      activeTab.value = 'score'
     }
   }
 }
@@ -166,7 +225,76 @@ onMounted(() => {
             <p class="collab-subtitle">多人接续创作，共谱佳篇</p>
           </div>
         </div>
+        <div class="collab-header-center">
+          <div class="current-user-display" @click="showUserPanel = !showUserPanel">
+            <span class="user-avatar">{{ currentUser?.avatar || '👤' }}</span>
+            <span class="user-name">{{ currentUser?.name || '我' }}</span>
+            <span class="user-arrow">{{ showUserPanel ? '▲' : '▼' }}</span>
+          </div>
+        </div>
         <button class="collab-close-btn" @click="emit('close')">✕</button>
+      </div>
+
+      <div v-if="showUserPanel" class="user-panel-popup">
+        <div class="user-panel-header">
+          <h4 class="user-panel-title">👥 参与者身份管理</h4>
+          <p class="user-panel-desc">切换身份模拟多人协作，或添加新的参与者</p>
+        </div>
+        <div class="user-list">
+          <div
+            v-for="user in allUsers"
+            :key="user.id"
+            class="user-item"
+            :class="{ active: user.id === currentUser?.id, editing: editingUserId === user.id }"
+          >
+            <template v-if="editingUserId === user.id">
+              <span class="user-avatar">{{ user.avatar }}</span>
+              <input
+                v-model="editingUserName"
+                type="text"
+                class="user-edit-input"
+                maxlength="12"
+                @keyup.enter="handleSaveEditUser"
+              />
+              <button class="user-action-btn save" @click="handleSaveEditUser">✓</button>
+              <button class="user-action-btn cancel" @click="handleCancelEditUser">✕</button>
+            </template>
+            <template v-else>
+              <span class="user-avatar">{{ user.avatar }}</span>
+              <span class="user-item-name">{{ user.name }}</span>
+              <span v-if="user.id === currentUser?.id" class="current-tag">当前</span>
+              <div class="user-actions">
+                <button
+                  v-if="user.id !== currentUser?.id"
+                  class="user-action-btn switch"
+                  @click="handleSwitchUser(user.id)"
+                  title="切换到此身份"
+                >
+                  切换
+                </button>
+                <button class="user-action-btn edit" @click="handleStartEditUser(user)" title="重命名">
+                  ✎
+                </button>
+                <button class="user-action-btn delete" @click="handleRemoveUser(user.id)" title="删除">
+                  🗑
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+        <div class="add-user-section">
+          <input
+            v-model="newUserName"
+            type="text"
+            class="add-user-input"
+            placeholder="输入新参与者名称..."
+            maxlength="12"
+            @keyup.enter="handleAddUser"
+          />
+          <button class="add-user-btn" @click="handleAddUser" :disabled="!newUserName.trim()">
+            + 添加
+          </button>
+        </div>
       </div>
 
       <div class="collab-tabs">
@@ -278,6 +406,29 @@ onMounted(() => {
                 </span>
               </div>
 
+              <div
+                v-if="poem.status === 'in_progress' && getNextSuggestedParticipant(poem)"
+                class="suggest-next-banner"
+                :class="{ 'is-current': getNextSuggestedParticipant(poem)?.id === currentUser?.id }"
+              >
+                <span class="suggest-icon">{{ getNextSuggestedParticipant(poem)?.id === currentUser?.id ? '🎯' : '⏳' }}</span>
+                <span class="suggest-text">
+                  <template v-if="getNextSuggestedParticipant(poem)?.id === currentUser?.id">
+                    轮到 <strong>{{ currentUser?.name }}</strong> 了，快去创作吧！
+                  </template>
+                  <template v-else>
+                    下一棒建议：<strong>{{ getNextSuggestedParticipant(poem)?.name }}</strong>
+                  </template>
+                </span>
+                <button
+                  v-if="getNextSuggestedParticipant(poem)?.id !== currentUser?.id"
+                  class="suggest-switch-btn"
+                  @click.stop="handleSwitchUser(getNextSuggestedParticipant(poem)!.id)"
+                >
+                  切换身份
+                </button>
+              </div>
+
               <div class="poem-card-actions">
                 <button
                   v-if="poem.status === 'draft'"
@@ -291,7 +442,7 @@ onMounted(() => {
                   @click="handleOpenPoem(poem.id)"
                   :style="{ backgroundColor: poem.accentColor }"
                 >
-                  {{ poem.status === 'draft' ? '查看详情' : poem.status === 'scoring' ? '进入评分' : '继续创作' }}
+                  {{ poem.status === 'draft' ? '查看详情' : (poem.status === 'completed' || poem.status === 'archived' || poem.status === 'scoring') ? '查看评分' : '继续创作' }}
                 </button>
                 <button
                   class="collab-danger-btn"
@@ -924,5 +1075,290 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.collab-header-center {
+  position: relative;
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.current-user-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(201, 168, 108, 0.12);
+  border: 1px solid rgba(201, 168, 108, 0.3);
+  border-radius: 24px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.current-user-display:hover {
+  background: rgba(201, 168, 108, 0.2);
+  border-color: rgba(201, 168, 108, 0.5);
+}
+
+.current-user-display .user-avatar {
+  font-size: 18px;
+}
+
+.current-user-display .user-name {
+  font-weight: 500;
+  color: var(--accent-gold);
+  font-size: 14px;
+}
+
+.current-user-display .user-arrow {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.user-panel-popup {
+  position: relative;
+  margin: 0 24px -12px 24px;
+  padding: 16px;
+  background: rgba(15, 15, 26, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  z-index: 5;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  animation: slideDown 0.25s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.user-panel-header {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.user-panel-title {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
+}
+
+.user-panel-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.user-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+
+.user-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.user-item.active {
+  border-color: rgba(201, 168, 108, 0.4);
+  background: rgba(201, 168, 108, 0.08);
+}
+
+.user-item.editing {
+  border-color: rgba(124, 169, 124, 0.5);
+  background: rgba(124, 169, 124, 0.08);
+}
+
+.user-item .user-avatar {
+  font-size: 20px;
+  width: 28px;
+  text-align: center;
+}
+
+.user-item-name {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.current-tag {
+  padding: 2px 8px;
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.user-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.user-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.15s;
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.user-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.user-action-btn.switch {
+  width: auto;
+  padding: 0 10px;
+  color: var(--accent-gold);
+  background: rgba(201, 168, 108, 0.1);
+}
+
+.user-action-btn.switch:hover {
+  background: rgba(201, 168, 108, 0.2);
+}
+
+.user-action-btn.save {
+  color: #7ca97c;
+  background: rgba(124, 169, 124, 0.15);
+}
+
+.user-action-btn.save:hover {
+  background: rgba(124, 169, 124, 0.25);
+}
+
+.user-action-btn.cancel:hover {
+  background: rgba(197, 107, 107, 0.15);
+  color: #c56b6b;
+}
+
+.user-action-btn.delete:hover {
+  background: rgba(197, 107, 107, 0.15);
+  color: #c56b6b;
+}
+
+.user-edit-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(124, 169, 124, 0.4);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.add-user-section {
+  display: flex;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.add-user-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.add-user-input:focus {
+  border-color: var(--accent-gold);
+}
+
+.add-user-btn {
+  padding: 8px 16px;
+  background: var(--accent-gold);
+  color: #1a1a2e;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.add-user-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.add-user-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.suggest-next-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(122, 158, 168, 0.12);
+  border: 1px solid rgba(122, 158, 168, 0.25);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.suggest-next-banner.is-current {
+  background: rgba(124, 169, 124, 0.12);
+  border-color: rgba(124, 169, 124, 0.35);
+  color: var(--text-primary);
+}
+
+.suggest-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.suggest-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.suggest-text strong {
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
+.is-current .suggest-text strong {
+  color: #7ca97c;
+}
+
+.suggest-switch-btn {
+  padding: 4px 10px;
+  background: rgba(201, 168, 108, 0.15);
+  color: var(--accent-gold);
+  border-radius: 12px;
+  font-size: 11px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.suggest-switch-btn:hover {
+  background: rgba(201, 168, 108, 0.25);
 }
 </style>

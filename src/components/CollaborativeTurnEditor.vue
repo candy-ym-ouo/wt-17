@@ -9,7 +9,11 @@ import {
   getPoemById,
   getPoemProgress,
   getCurrentUser,
-  startPoem
+  getCurrentUserFull,
+  getAllUsers,
+  switchUser,
+  startPoem,
+  getNextSuggestedParticipant
 } from '@/utils/collaborativePoetry'
 import { COLLABORATIVE_STATUS_LABELS, COLLABORATIVE_STATUS_COLORS } from '@/types'
 
@@ -30,6 +34,7 @@ const turnComment = ref('')
 const isEditing = ref(false)
 const hasLock = ref(false)
 const refreshKey = ref(0)
+const showUserSwitcher = ref(false)
 
 const currentTurn = computed((): Turn | undefined => {
   void refreshKey.value
@@ -56,6 +61,26 @@ const progress = computed(() => {
 const isCurrentTurnSubmitted = computed(() => {
   const t = currentTurn.value
   return t && t.submittedAt > 0
+})
+
+const currentUserFull = computed(() => {
+  void refreshKey.value
+  return getCurrentUserFull()
+})
+
+const allAvailableUsers = computed(() => {
+  void refreshKey.value
+  return getAllUsers()
+})
+
+const nextSuggested = computed(() => {
+  void refreshKey.value
+  return getNextSuggestedParticipant(localPoem.value)
+})
+
+const isMyTurn = computed(() => {
+  if (!nextSuggested.value) return true
+  return nextSuggested.value.id === currentUserFull.value?.id
 })
 
 const refreshPoem = () => {
@@ -145,7 +170,11 @@ const formatDate = (ts: number): string => {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-const user = getCurrentUser()
+const handleSwitchUser = (userId: string) => {
+  switchUser(userId)
+  refreshPoem()
+  showUserSwitcher.value = false
+}
 
 watch(() => props.poemId, () => {
   refreshPoem()
@@ -172,8 +201,48 @@ onMounted(() => {
         <span class="creator-tag">
           发起者：{{ localPoem.creatorName }}
         </span>
+        <div class="current-user-wrap" @click.stop="showUserSwitcher = !showUserSwitcher">
+          <span class="current-user-avatar">{{ currentUserFull?.avatar || '👤' }}</span>
+          <span class="current-user-label">{{ currentUserFull?.name || '我' }}</span>
+          <span class="switch-arrow">{{ showUserSwitcher ? '▲' : '▼' }}</span>
+          <div v-if="showUserSwitcher" class="user-switcher-popup" @click.stop>
+            <div class="switcher-title">切换身份</div>
+            <div class="switcher-user-list">
+              <div
+                v-for="u in allAvailableUsers"
+                :key="u.id"
+                class="switcher-user-item"
+                :class="{ active: u.id === currentUserFull?.id }"
+                @click="handleSwitchUser(u.id)"
+              >
+                <span class="switcher-avatar">{{ u.avatar }}</span>
+                <span class="switcher-name">{{ u.name }}</span>
+                <span v-if="u.id === currentUserFull?.id" class="switcher-current">当前</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <p v-if="localPoem.description" class="poem-description">{{ localPoem.description }}</p>
+
+      <div
+        v-if="localPoem.status === 'in_progress' && nextSuggested"
+        class="turn-reminder-banner"
+        :class="{ myturn: isMyTurn }"
+      >
+        <span class="reminder-icon">{{ isMyTurn ? '🎯' : '⏳' }}</span>
+        <span class="reminder-text">
+          <template v-if="isMyTurn">
+            当前回合由 <strong>{{ currentUserFull?.name }}</strong> 创作，加油！
+          </template>
+          <template v-else>
+            建议由 <strong>{{ nextSuggested.name }}</strong> 接续，
+            <button class="inline-switch-btn" @click="handleSwitchUser(nextSuggested.id)">
+              切换到 {{ nextSuggested.name }}
+            </button>
+          </template>
+        </span>
+      </div>
 
       <div class="progress-section">
         <div class="progress-info">
@@ -216,7 +285,7 @@ onMounted(() => {
           v-for="p in localPoem.participants"
           :key="p.id"
           class="participant-tag"
-          :class="{ self: p.id === user.id }"
+          :class="{ self: p.id === currentUserFull?.id }"
         >
           {{ p.name }}
         </span>
@@ -760,5 +829,159 @@ onMounted(() => {
 
 .scoring-icon {
   font-size: 24px;
+}
+
+.current-user-wrap {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(201, 168, 108, 0.12);
+  border: 1px solid rgba(201, 168, 108, 0.3);
+  border-radius: 20px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.current-user-wrap:hover {
+  background: rgba(201, 168, 108, 0.2);
+}
+
+.current-user-avatar {
+  font-size: 16px;
+}
+
+.current-user-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-gold);
+}
+
+.switch-arrow {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.user-switcher-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background: rgba(15, 15, 26, 0.98);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.switcher-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 8px 8px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.switcher-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.switcher-user-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.switcher-user-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.switcher-user-item.active {
+  background: rgba(201, 168, 108, 0.15);
+}
+
+.switcher-avatar {
+  font-size: 16px;
+}
+
+.switcher-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.switcher-current {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+  border-radius: 8px;
+}
+
+.turn-reminder-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(122, 158, 168, 0.1);
+  border: 1px solid rgba(122, 158, 168, 0.25);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.turn-reminder-banner.myturn {
+  background: rgba(124, 169, 124, 0.12);
+  border-color: rgba(124, 169, 124, 0.35);
+}
+
+.reminder-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.reminder-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.reminder-text strong {
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
+.myturn .reminder-text strong {
+  color: #7ca97c;
+}
+
+.inline-switch-btn {
+  padding: 3px 10px;
+  background: rgba(201, 168, 108, 0.2);
+  color: var(--accent-gold);
+  border-radius: 12px;
+  font-size: 12px;
+  margin-left: 4px;
+  transition: all 0.15s;
+}
+
+.inline-switch-btn:hover {
+  background: rgba(201, 168, 108, 0.3);
 }
 </style>
