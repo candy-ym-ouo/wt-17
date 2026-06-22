@@ -28,7 +28,7 @@ const emit = defineEmits<{
   (e: 'openGathering'): void
   (e: 'openSociety'): void
   (e: 'openTrial'): void
-  (e: 'openReconstruction'): void
+  (e: 'openClassicReconstruction'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save'): void
@@ -130,8 +130,8 @@ const emit = defineEmits<{
       <button class="icon-btn trial-btn" @click="emit('openTrial')" title="墨韵试炼">
         🏮
       </button>
-      <button class="icon-btn reconstruction-btn" @click="emit('openReconstruction')" title="名篇重构">
-        📚
+      <button class="icon-btn classic-btn" @click="emit('openClassicReconstruction')" title="名篇重构">
+        📜
       </button>
       <button class="icon-btn" @click="emit('reset')" title="清空画布">
         ↺
@@ -408,8 +408,8 @@ const emit = defineEmits<{
   color: #c9a86c;
 }
 
-.reconstruction-btn:hover {
-  color: #a87ac9;
+.classic-btn:hover {
+  color: #7a9ea8;
 }
 
 .save-btn {

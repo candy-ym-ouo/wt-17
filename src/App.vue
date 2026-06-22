@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult, ClassicPoem, ReconstructionState, ReconstructionResult } from '@/types'
+import type { Chapter, CanvasPhrase, Phrase, PhraseCategory, ScoreBreakdown, Composition, GameState, QuestState, SideQuest, QuestCondition, HistorySnapshot, CanvasState, ChapterProgress, Theme, TitleOption, UserActivityState, UserEntryType, WelcomeContent, RecommendationAction, PhasedGuidance, GatheringState, GatheringChapterResult } from '@/types'
 import { chapters, getChapterById, chapterDropConfigs, chapterSoundscapes } from '@/data/chapters'
 import { sideQuests, getQuestsByChapter, getQuestById } from '@/data/sideQuests'
 import { rewardPhrases, refreshPoolByCategory, createPhrase, createRewardPhrase, getAllPhrases, rarityLabels, rarityColors, generateChapterPhrasesWithSource, getThemeEnhancedPhrases } from '@/data/phrases'
@@ -36,7 +36,8 @@ import { poetryGatherings, getGatheringById, getGatheringChapterById, getGatheri
 import { loadGatheringState, saveGatheringState, setGatheringActive, clearActiveGathering, saveChapterResult, evaluateBonusRules, claimGatheringReward, archiveGathering, isRewardClaimed as isGatheringRewardClaimed } from '@/utils/poetryGathering'
 import { getCipaiById, getCipaiScoringRuleByMode, cipaiTemplates } from '@/data/cipaiTemplates'
 import { sortPhrasesForCipai, getCipaiProgress, getNextLineHint, getCipaiScoreForPhrases } from '@/utils/cipaiWorkshop'
-import type { CipaiTemplate, CipaiScoringMode, CipaiScoreBreakdown } from '@/types'
+import type { CipaiTemplate, CipaiScoringMode, CipaiScoreBreakdown, ClassicPoem } from '@/types'
+import { getPoemById } from '@/data/classicPoems'
 
 import TopHeader from '@/components/TopHeader.vue'
 import PhrasePool from '@/components/PhrasePool.vue'
@@ -56,16 +57,7 @@ import PoetryGatheringPanel from '@/components/PoetryGatheringPanel.vue'
 import GatheringSession from '@/components/GatheringSession.vue'
 import GatheringRankingPanel from '@/components/GatheringRankingPanel.vue'
 import CipaiWorkshop from '@/components/CipaiWorkshop.vue'
-import { getPoemById } from '@/data/classicPoems'
-import { 
-  loadReconstructionState, 
-  saveReconstructionResult, 
-  saveReconstructionState 
-} from '@/utils/reconstructionStorage'
-import { generateRestorationResult } from '@/utils/reconstruction'
-import ReconstructionPanel from '@/components/ReconstructionPanel.vue'
-import ReconstructionSession from '@/components/ReconstructionSession.vue'
-import ReconstructionSettlement from '@/components/ReconstructionSettlement.vue'
+import ClassicReconstruction from '@/components/ClassicReconstruction.vue'
 
 const gameState = ref<GameState>(loadGameState())
 const currentChapterId = ref(gameState.value.currentChapterId)
@@ -139,20 +131,11 @@ const gatheringElapsedSeconds = ref(0)
 const showCipaiWorkshop = ref(false)
 const activeCipaiId = ref<string | null>(null)
 const cipaiScoringMode = ref<CipaiScoringMode>('standard')
-const showSocietyPanel = ref(false)
-const showTrialPanel = ref(false)
 
-const showReconstructionPanel = ref(false)
-const showReconstructionSession = ref(false)
-const showReconstructionSettlement = ref(false)
-const activeReconstructionPoemId = ref<string | null>(null)
-const reconstructionState = ref<ReconstructionState>(loadReconstructionState())
-const reconstructionResult = ref<ReconstructionResult | null>(null)
-
-const activeReconstructionPoem = computed((): ClassicPoem | null => {
-  if (!activeReconstructionPoemId.value) return null
-  return getPoemById(activeReconstructionPoemId.value) || null
-})
+const showClassicReconstruction = ref(false)
+const activeClassicPoemId = ref<string | null>(null)
+const classicBestScores = ref<Record<string, number>>({})
+const classicCompletedPoemIds = ref<string[]>([])
 
 let autoSaveTimer: number | null = null
 
@@ -614,6 +597,23 @@ const handleChangeCipaiScoringMode = (mode: CipaiScoringMode) => {
 }
 
 const handleCipaiRecommendPhrase = (phrase: Phrase) => {
+  if (placedPhraseIds.value.has(phrase.id)) {
+    return
+  }
+  handlePhraseSelect(phrase)
+}
+
+const handleSelectClassicPoem = (poem: ClassicPoem) => {
+  activeClassicPoemId.value = poem.id
+  musicPlayer.playPluckSound()
+}
+
+const handleStartClassicReconstruction = (poemId: string) => {
+  activeClassicPoemId.value = poemId
+  musicPlayer.playPluckSound()
+}
+
+const handleClassicSelectPhrase = (phrase: Phrase) => {
   if (placedPhraseIds.value.has(phrase.id)) {
     return
   }
@@ -1481,113 +1481,6 @@ const rankingGathering = computed(() => {
   return getGatheringById(rankingGatheringId.value) || null
 })
 
-const handleOpenReconstruction = () => {
-  reconstructionState.value = loadReconstructionState()
-  showReconstructionPanel.value = true
-}
-
-const handleStartReconstruction = (poemId: string) => {
-  activeReconstructionPoemId.value = poemId
-  showReconstructionPanel.value = false
-  showReconstructionSession.value = true
-  musicPlayer.playPluckSound()
-}
-
-const handleReconstructionSelectPhrase = (phrase: Phrase) => {
-  musicPlayer.playPluckSound()
-}
-
-const handleReconstructionRemovePhrase = (phraseId: string) => {
-  musicPlayer.playPluckSound()
-}
-
-const handleReconstructionSubmit = (phrases: Phrase[], elapsedSeconds: number) => {
-  if (!activeReconstructionPoemId.value) return
-  const poem = getPoemById(activeReconstructionPoemId.value)
-  if (!poem) return
-  
-  const result = generateRestorationResult(poem, phrases, elapsedSeconds, {
-    bestScores: reconstructionState.value.bestScores,
-    clearedPoemIds: reconstructionState.value.clearedPoemIds
-  })
-  
-  const newState = saveReconstructionResult(result)
-  reconstructionState.value = newState
-  
-  const now = Date.now()
-  const composition: Composition = {
-    id: result.compositionId,
-    chapterId: `recon_${activeReconstructionPoemId.value}`,
-    phrases: phrases.map(p => ({
-      id: p.id,
-      text: p.text,
-      category: p.category,
-      position: p.position,
-      rotation: p.rotation,
-      isPlaced: p.isPlaced,
-      weight: p.weight,
-      rarity: p.rarity,
-      source: p.source
-    })),
-    score: {
-      coherence: result.score.imageryRestoration,
-      imagery: result.score.themeRestoration,
-      rhythm: result.score.structureRestoration,
-      themeMatch: result.score.emotionRestoration,
-      total: result.score.total
-    },
-    createdAt: now,
-    updatedAt: now,
-    title: `重构·${poem.title}`
-  }
-  saveComposition(composition)
-  compositions.value = loadCompositions()
-  
-  const phraseTexts = phrases.map(p => p.text)
-  collectPhrases(phraseTexts)
-  questState.value = loadQuestState()
-  
-  reconstructionResult.value = result
-  showReconstructionSession.value = false
-  showReconstructionSettlement.value = true
-  
-  musicPlayer.playSaveChime()
-}
-
-const handleReconstructionQuit = () => {
-  showReconstructionSession.value = false
-  activeReconstructionPoemId.value = null
-}
-
-const handleReconstructionCloseSettlement = () => {
-  showReconstructionSettlement.value = false
-  reconstructionResult.value = null
-  showReconstructionPanel.value = true
-  reconstructionState.value = loadReconstructionState()
-}
-
-const handleReconstructionRetry = () => {
-  showReconstructionSettlement.value = false
-  reconstructionResult.value = null
-  showReconstructionSession.value = true
-  musicPlayer.playPluckSound()
-}
-
-const handleReconstructionBackToList = () => {
-  showReconstructionSettlement.value = false
-  reconstructionResult.value = null
-  activeReconstructionPoemId.value = null
-  showReconstructionPanel.value = true
-  reconstructionState.value = loadReconstructionState()
-}
-
-const handleCloseReconstructionPanel = () => {
-  showReconstructionPanel.value = false
-  if (boardPhrases.value.length > 0) {
-    saveCurrentDraft('dialog_close')
-  }
-}
-
 onMounted(() => {
   document.addEventListener('click', handleFirstInteraction, { once: true })
   document.addEventListener('touchstart', handleFirstInteraction, { once: true, passive: true })
@@ -1658,10 +1551,8 @@ watch(currentChapterId, (newId) => {
       @openSnapshots="showSnapshotPanel = true"
       @openThemes="showThemePanel = true"
       @openGathering="showGatheringPanel = true"
-      @openSociety="showSocietyPanel = true"
-      @openTrial="showTrialPanel = true"
       @openCipaiWorkshop="showCipaiWorkshop = true"
-      @openReconstruction="handleOpenReconstruction"
+      @openClassicReconstruction="showClassicReconstruction = true"
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSave"
@@ -1970,32 +1861,20 @@ watch(currentChapterId, (newId) => {
       @changeScoringMode="handleChangeCipaiScoringMode"
       @selectPhrase="handleCipaiRecommendPhrase"
     />
-    
-    <ReconstructionPanel
-      v-if="showReconstructionPanel"
-      :reconstructionState="reconstructionState"
-      @close="handleCloseReconstructionPanel"
-      @startReconstruction="handleStartReconstruction"
+
+    <ClassicReconstruction
+      :visible="showClassicReconstruction"
+      :boardPhrases="phrasesForScoring"
+      :poolPhrases="enhancedChapterPhrases"
+      :activePoemId="activeClassicPoemId"
+      :bestScores="classicBestScores"
+      :completedPoemIds="classicCompletedPoemIds"
+      @close="showClassicReconstruction = false"
+      @selectPoem="handleSelectClassicPoem"
+      @startReconstruction="handleStartClassicReconstruction"
+      @selectPhrase="handleClassicSelectPhrase"
     />
-    
-    <ReconstructionSession
-      v-if="showReconstructionSession && activeReconstructionPoem"
-      :poem="activeReconstructionPoem"
-      @selectPhrase="handleReconstructionSelectPhrase"
-      @removePhrase="handleReconstructionRemovePhrase"
-      @submit="handleReconstructionSubmit"
-      @quit="handleReconstructionQuit"
-    />
-    
-    <ReconstructionSettlement
-      v-if="showReconstructionSettlement && reconstructionResult && activeReconstructionPoem"
-      :result="reconstructionResult"
-      :poem="activeReconstructionPoem"
-      @close="handleReconstructionCloseSettlement"
-      @retry="handleReconstructionRetry"
-      @backToList="handleReconstructionBackToList"
-    />
-    
+
     <div class="bg-decoration">
       <div class="deco-line" style="top: 10%; left: 5%;"></div>
       <div class="deco-line" style="top: 30%; right: 8%; animation-delay: -2s;"></div>

@@ -354,3 +354,39 @@ button:disabled {
   animation: submissionFloat 4s ease-in-out infinite;
 }
 
+@keyframes classicReveal {
+  0% { opacity: 0; transform: scale(0.95) translateY(10px); filter: blur(4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+}
+
+@keyframes deviationPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 168, 108, 0.3); }
+  50% { box-shadow: 0 0 12px 4px rgba(201, 168, 108, 0.15); }
+}
+
+@keyframes scoreRingFill {
+  from { stroke-dashoffset: 364; }
+}
+
+@keyframes restorationGradeReveal {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-classic-reveal {
+  animation: classicReveal 0.5s ease-out forwards;
+}
+
+.animate-deviation-pulse {
+  animation: deviationPulse 2s ease-in-out infinite;
+}
+
+.animate-score-ring-fill {
+  animation: scoreRingFill 1s ease-out forwards;
+}
+
+.animate-restoration-grade {
+  animation: restorationGradeReveal 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
